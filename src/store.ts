@@ -2,7 +2,7 @@ import { create, type StoreApi, type UseBoundStore } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import type { DB, Job, LeadStatus, ReactionType, RejectReason, Sentiment, Settings } from './types'
 import { applyJob, planJob } from './data/agent'
-import { createSeed, defaultSettings } from './data/seed'
+import { blankSettings, createSeed, defaultSettings } from './data/seed'
 import * as T from './data/transitions'
 import { BACKEND } from './data/backend'
 import { toast } from './components/ui'
@@ -82,7 +82,7 @@ export const emptyDB = (): DB => ({
   insights: [],
   activities: [],
   suppression: [],
-  settings: defaultSettings(),
+  settings: BACKEND === 'demo' ? defaultSettings() : blankSettings(),
 })
 
 function actions(set: SetState, get: GetState): Actions {

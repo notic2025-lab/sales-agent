@@ -21,7 +21,7 @@ import {
 } from 'firebase/firestore'
 import type { DB } from '../types'
 import { emptyDB, type Remote, type Store } from '../store'
-import { defaultSettings } from './seed'
+import { blankSettings } from './seed'
 import { firebaseConfig } from './backend'
 
 const COLLECTIONS = ['campaigns', 'leads', 'messages', 'reactions', 'jobs', 'insights', 'activities'] as const
@@ -109,7 +109,7 @@ export function connectFirebase(setState: (patch: Partial<Store>) => void): Remo
     subs.push(
       onSnapshot(
         doc(db, 'settings', 'main'),
-        (snap) => put('settings', { settings: { ...defaultSettings(), ...(snap.data() as Partial<DB['settings']>), runnerSpeed: 1 } }),
+        (snap) => put('settings', { settings: { ...blankSettings(), ...(snap.data() as Partial<DB['settings']>), runnerSpeed: 1 } }),
         fail('settings'),
       ),
     )

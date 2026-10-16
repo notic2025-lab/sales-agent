@@ -3,6 +3,11 @@ import type { Activity, Campaign, DB, Job, JobType, Settings } from '../types'
 import { DAY, HOUR, MIN, mulberry32, uid } from '../lib/util'
 import { applyJob, newJob, planJob } from './agent'
 
+// 本番の初期値：送信者情報は空（デモの値が本番のメールに入らないように）。上限は小さめから始める
+export function blankSettings(): Settings {
+  return { ...defaultSettings(), senderCompany: '', senderName: '', senderEmail: '', senderAddress: '', signature: '', dailyLimit: 10 }
+}
+
 export function defaultSettings(): Settings {
   return {
     senderCompany: 'NOTIC',

@@ -19,6 +19,18 @@ const POLL_MS = Number(opt('POLL_SEC', '30')) * 1000
 const MAX_MIN = Number(opt('JOB_TIMEOUT_MIN', '40'))
 const MAX_BUDGET = opt('MAX_BUDGET_USD', '3')
 const CLAUDE = opt('CLAUDE_BIN', 'claude')
+// 秘密情報とコードは読ませない・書かせない（作業フォルダの信頼設定に関係なく効くよう、起動時に渡す）
+const DENIED = [
+  'Read(./runner/.env)',
+  'Read(./.env.local)',
+  'Read(~/.config/**)',
+  'Read(~/.claude.json)',
+  'Edit(./src/**)',
+  'Edit(./runner/*.ts)',
+  'Edit(./runner/lib/**)',
+  'Edit(./.claude/**)',
+  'Edit(./firestore.rules)',
+].join(',')
 const ALLOWED = [
   'Read',
   'Glob',
@@ -99,6 +111,7 @@ function run(db: Firestore, job: Job): Promise<{ ok: boolean; summary: string; e
       '--verbose',
       '--permission-mode', 'dontAsk',
       '--allowedTools', ALLOWED,
+      '--disallowedTools', DENIED,
       '--max-budget-usd', MAX_BUDGET,
       '--no-session-persistence',
       ...(job.type === 'send-approved' || job.type === 'collect-leads'

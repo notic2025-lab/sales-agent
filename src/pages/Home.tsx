@@ -1,6 +1,6 @@
 // 最初の画面：営業リストをカードで並べる。押すと詳細へ
 import { Link } from 'react-router-dom'
-import { Bot, ChevronRight, Plus } from 'lucide-react'
+import { Bot, ChevronRight, Plus, Settings } from 'lucide-react'
 import { useStore } from '../store'
 import { stageOf, statsOf } from '../data/selectors'
 import { JOB_LABEL } from '../data/agent'
@@ -10,6 +10,13 @@ import { MiniSteps, StagePill } from '../components/ui'
 export default function Home() {
   const db = useStore()
   const list = [...db.campaigns].sort((a, b) => b.createdAt - a.createdAt)
+  const s = db.settings
+  const missing = [
+    !s.senderCompany && '会社名',
+    !s.senderName && '担当者名',
+    !s.senderEmail && '送信に使うメールアドレス',
+    !s.senderAddress && '住所',
+  ].filter(Boolean)
 
   return (
     <>
@@ -19,6 +26,21 @@ export default function Home() {
           <p>商材と条件ごとに、企業の収集 → 文面 → 送信 → 反応の確認まで、エージェントと一緒に進めます。</p>
         </div>
       </div>
+      {missing.length > 0 && (
+        <div className="banner" style={{ marginBottom: 18 }}>
+          <span className="ic">
+            <Settings size={18} />
+          </span>
+          <div className="grow">
+            <b>はじめに、設定で送信者情報を入れてください</b>
+            <span className="small">未入力：{missing.join('・')}。メールの末尾に入れる情報で、空のままだとエージェントは文面を作れません。</span>
+          </div>
+          <Link to="/settings" className="btn btn-dark">
+            設定を開く
+            <ChevronRight size={16} />
+          </Link>
+        </div>
+      )}
       <div className="gallery">
         <Link to="/new" className="lcard new">
           <span className="ic">
