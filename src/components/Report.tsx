@@ -1,4 +1,3 @@
-import { useSearchParams } from 'react-router-dom'
 import { ChartColumn, Lightbulb } from 'lucide-react'
 import { useStore } from '../store'
 import type { Message } from '../types'
@@ -37,12 +36,11 @@ function Bars({ rows, note }: { rows: Row[]; note?: string }) {
   )
 }
 
-export default function Reports() {
+// 営業リストごとの評価（詳細画面の「評価」タブ）
+export function Report({ campaignId: campaign }: { campaignId: string }) {
   const db = useStore()
   const toggleInsight = useStore((s) => s.toggleInsight)
-  const [params, setParams] = useSearchParams()
-  const campaign = params.get('campaign') ?? ''
-  const s = statsOf(db, campaign || undefined)
+  const s = statsOf(db, campaign)
 
   const reactions = db.reactions.filter((r) => !campaign || r.campaignId === campaign)
   const byMsg = new Map(reactions.map((r) => [r.messageId, r]))
@@ -80,23 +78,6 @@ export default function Reports() {
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>評価レポート</h1>
-          <p>送信した文面への反応を集計し、エージェントが次の文面に活かす「学び」をまとめています。</p>
-        </div>
-        <div className="actions">
-          <select className="select" style={{ width: 'auto', minWidth: 240 }} value={campaign} onChange={(e) => setParams(e.target.value ? { campaign: e.target.value } : {}, { replace: true })} aria-label="キャンペーン">
-            <option value="">すべてのキャンペーン</option>
-            {db.campaigns.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
       {evaluated.length === 0 ? (
         <div className="card">
           <Empty icon={<ChartColumn size={22} />} title="まだ評価したデータがありません">

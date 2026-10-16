@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Ban, Bot, Database, Mail, RotateCcw, Save } from 'lucide-react'
+import { Ban, RotateCcw, Save } from 'lucide-react'
 import { useStore } from '../store'
-import { Pill, Switch, toast } from '../components/ui'
+import { Switch, toast } from '../components/ui'
 import { IS_DEMO } from '../data/backend'
 
 const WINDOWS = ['9:00〜18:00', '10:00〜17:00', '8:00〜20:00']
@@ -19,7 +19,7 @@ export default function Settings() {
       <div className="page-head">
         <div>
           <h1>設定</h1>
-          <p>文面の署名と送信ルール、配信停止リスト、外部サービスとの接続です。</p>
+          <p>文面の署名と送信ルール、配信停止リストです。</p>
         </div>
         <div className="actions">
           <button
@@ -129,34 +129,15 @@ export default function Settings() {
             )}
           </div>
         </section>
-        <section className="card">
-          <div className="card-head">
-            <h2>接続</h2>
-          </div>
-          <div className="card-body stack" style={{ gap: 14 }}>
-            {[
-              { icon: Mail, name: 'Gmail', sub: '送信と、返信・配信停止・不達のチェックに使います', state: IS_DEMO ? 'デモ（未接続）' : 'ランナーの Mac で接続' },
-              { icon: Bot, name: 'ランナー / ClaudeCode', sub: 'claude -p でスラッシュコマンドを実行します', state: IS_DEMO ? 'ブラウザ内で再現' : '社内の Mac（launchd）' },
-              { icon: Database, name: 'DB', sub: 'ジョブ・企業・文面・送信ログ・反応を保存します', state: IS_DEMO ? 'このブラウザに保存' : 'Firestore' },
-            ].map((c) => (
-              <div className="row" key={c.name} style={{ alignItems: 'flex-start' }}>
-                <span className="ch">
-                  <span className="on" style={{ width: 34, height: 34, borderRadius: 9 }}>
-                    <c.icon size={17} />
-                  </span>
-                </span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <b>{c.name}</b>
-                  <div className="muted small">{c.sub}</div>
-                </div>
-                <Pill sm>{c.state}</Pill>
-              </div>
-            ))}
-            {IS_DEMO && (
-            <div style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 14 }} className="row wrap">
+        {IS_DEMO && (
+          <section className="card">
+            <div className="card-head">
+              <h2>デモ</h2>
+            </div>
+            <div className="card-body row wrap">
               <div style={{ flex: 1, minWidth: 200 }}>
                 <b>デモデータを最初の状態に戻す</b>
-                <div className="muted small">作成したキャンペーンや承認の操作は消えます。</div>
+                <div className="muted small">作成した営業リストや承認の操作は消えます。</div>
               </div>
               <button
                 className="btn"
@@ -172,9 +153,8 @@ export default function Settings() {
                 リセット
               </button>
             </div>
-            )}
-          </div>
-        </section>
+          </section>
+        )}
       </div>
     </>
   )

@@ -79,17 +79,17 @@ export function tasksOf(db: DB): Task[] {
     const st = stageOf(db, c.id)
     const msgs = db.messages.filter((m) => m.campaignId === c.id)
     if (st.step === 1 && st.tone === 'admin') {
-      out.push({ key: `list-${c.id}`, kind: 'list', campaignId: c.id, count: db.leads.filter((l) => l.campaignId === c.id && l.status === 'pending').length, to: `/campaigns/${c.id}?tab=leads` })
+      out.push({ key: `list-${c.id}`, kind: 'list', campaignId: c.id, count: db.leads.filter((l) => l.campaignId === c.id && l.status === 'pending').length, to: `/lists/${c.id}?tab=leads` })
     }
     const drafts = msgs.filter((m) => m.status === 'draft' || m.status === 'approved').length
-    if (drafts && st.step === 3) out.push({ key: `msg-${c.id}`, kind: 'message', campaignId: c.id, count: drafts, to: `/campaigns/${c.id}?tab=messages` })
+    if (drafts && st.step === 3) out.push({ key: `msg-${c.id}`, kind: 'message', campaignId: c.id, count: drafts, to: `/lists/${c.id}?tab=messages` })
     const manual = msgs.filter((m) => m.status === 'manual_pending').length
-    if (manual) out.push({ key: `manual-${c.id}`, kind: 'manual', campaignId: c.id, count: manual, to: `/campaigns/${c.id}?tab=messages&filter=manual` })
+    if (manual) out.push({ key: `manual-${c.id}`, kind: 'manual', campaignId: c.id, count: manual, to: `/lists/${c.id}?tab=messages&filter=manual` })
     const replies = db.reactions.filter((r) => r.campaignId === c.id && r.replyDraft?.status === 'draft').length
-    if (replies) out.push({ key: `reply-${c.id}`, kind: 'reply', campaignId: c.id, count: replies, to: `/reactions?tab=todo&campaign=${c.id}` })
+    if (replies) out.push({ key: `reply-${c.id}`, kind: 'reply', campaignId: c.id, count: replies, to: `/lists/${c.id}?tab=reactions` })
     const reacted = new Set(db.reactions.map((r) => r.messageId))
     const sns = msgs.filter((m) => m.channel === 'sns' && m.status === 'manual_done' && !reacted.has(m.id)).length
-    if (sns) out.push({ key: `sns-${c.id}`, kind: 'sns', campaignId: c.id, count: sns, to: `/reactions?register=1&campaign=${c.id}` })
+    if (sns) out.push({ key: `sns-${c.id}`, kind: 'sns', campaignId: c.id, count: sns, to: `/lists/${c.id}?tab=reactions` })
   }
   return out
 }

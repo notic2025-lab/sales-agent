@@ -46,8 +46,8 @@ export default function CampaignNew() {
       channels,
       evalAfterDays,
     })
-    toast('キャンペーンを作成し、リスト収集のジョブを登録しました')
-    nav(`/campaigns/${id}`)
+    toast('営業リストを作成しました。エージェントが企業を集め始めます')
+    nav(`/lists/${id}`)
   }
 
   const brief = `${regions.length ? regions.join('・') : '全国'}の${industries.length ? industries.join('・') : 'さまざまな業種'}の企業を${count}社集めます。${
@@ -58,7 +58,7 @@ export default function CampaignNew() {
     <>
       <div className="page-head">
         <div>
-          <h1>新しいキャンペーン</h1>
+          <h1>新しい営業リスト</h1>
           <p>商材と条件を登録すると、エージェントが企業リストの収集を始めます。連絡はあなたの承認後です。</p>
         </div>
       </div>
@@ -189,7 +189,7 @@ export default function CampaignNew() {
                 ))}
               </div>
               <div className="field">
-                <label htmlFor="cname">キャンペーン名</label>
+                <label htmlFor="cname">リストの名前</label>
                 <input id="cname" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={autoName} />
                 <span className="hint">空欄のときは「{autoName}」になります。</span>
               </div>

@@ -86,7 +86,7 @@ export function checkMessage(m: Message, ctx: CheckContext): Check[] {
     (e) => e.lead && (e.lead.domain === lead.domain || (!!lead.email && e.lead.email === lead.email)),
   )
   if (dup) err('duplicate', `同じ宛先への2通目です（${dup.lead?.company}）`)
-  if (ctx.recentDomains?.has(lead.domain)) warn('recent', '直近30日に別のキャンペーンで連絡した企業です')
+  if (ctx.recentDomains?.has(lead.domain)) warn('recent', '直近30日に別の営業リストで連絡した企業です')
 
   // 中身
   if (m.channel !== 'sns' && !m.subject.trim()) err('subject', '件名が空です')

@@ -17,7 +17,7 @@ export function createCampaign(s: DB, input: CampaignInput, id: string, now: num
   return {
     campaigns: [...s.campaigns, campaign],
     jobs: [...s.jobs, newJob('collect-leads', id, now)],
-    activities: [act(now, `キャンペーン「${campaign.name}」を作成し、リスト収集を登録しました`, id), ...s.activities],
+    activities: [act(now, `営業リスト「${campaign.name}」を作成し、企業の収集を登録しました`, id), ...s.activities],
   }
 }
 

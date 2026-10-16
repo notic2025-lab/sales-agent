@@ -404,7 +404,7 @@ export function FinalReviewModal({ campaignId, onClose }: { campaignId: string; 
             <input type="checkbox" className="check" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} disabled={!ok.length || !valid} />
             <span>
               <b>宛先・件名・本文と送るタイミングを確認しました。</b>
-              <small>この {ok.length}件を送ることを承認します。送信が始まるまでは、キャンペーンの画面から予約を取り消せます。</small>
+              <small>この {ok.length}件を送ることを承認します。送信が始まるまでは、営業リストの画面から予約を取り消せます。</small>
             </span>
           </label>
         </section>

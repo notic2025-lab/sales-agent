@@ -88,9 +88,9 @@ p {
 /* ── layout ─────────────────────────────── */
 
 .app {
-  display: grid;
-  grid-template-columns: var(--side) minmax(0, 1fr);
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar {
@@ -312,8 +312,9 @@ p {
 
 .content {
   padding: 28px;
-  max-width: 1480px;
+  max-width: 1280px;
   width: 100%;
+  margin: 0 auto;
 }
 
 .page-head {
@@ -2213,25 +2214,6 @@ table.t {
 }
 
 @media (max-width: 900px) {
-  .app {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .sidebar {
-    position: fixed;
-    left: 0;
-    top: 0;
-    z-index: 60;
-    width: 280px;
-    transform: translateX(-100%);
-    transition: transform 0.2s ease;
-    box-shadow: var(--shadow);
-  }
-  .sidebar.open {
-    transform: none;
-  }
-  .topbar .menu-btn {
-    display: inline-flex;
-  }
   .topbar {
     padding: 0 16px;
     gap: 8px;
@@ -2509,4 +2491,110 @@ table.t {
 
 .auth-card .brand {
   padding: 0;
+}
+
+/* ── 営業リストのギャラリー ─────────────── */
+
+.topbar .brand {
+  padding: 0;
+}
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.lcard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.lcard:hover {
+  border-color: var(--accent-dot);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+.lcard .title {
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.lcard .nums {
+  display: flex;
+  gap: 22px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.lcard .nums span {
+  display: grid;
+}
+
+.lcard .nums small {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.lcard .nums b {
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.lcard .cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--bg-soft);
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.lcard .cta.you {
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-weight: 700;
+}
+
+.lcard .cta.agent {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.lcard.new {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-style: dashed;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink-2);
+  min-height: 220px;
+}
+
+.lcard.new .ic {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+}
+
+.lcard.new small {
+  color: var(--ink-3);
+  max-width: 260px;
 }

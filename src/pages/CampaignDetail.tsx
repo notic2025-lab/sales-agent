@@ -1,16 +1,18 @@
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { CalendarClock, ChartColumn, ChevronRight, CircleCheck, FilePenLine, ListChecks, MessageSquareReply, Play, Send } from 'lucide-react'
+import { useState } from 'react'
+import { AtSign, CalendarClock, ChartColumn, ChevronRight, CircleCheck, FilePenLine, ListChecks, MessageSquareReply, Play, Send } from 'lucide-react'
 import { useStore } from '../store'
 import { stageOf, statsOf } from '../data/selectors'
 import { CHANNEL_LABEL, JOB_LABEL } from '../data/agent'
 import { fmtDateTime, pct } from '../lib/util'
 import { IS_DEMO } from '../data/backend'
 import { ChannelLabel, Empty, Pill, StagePill, Stepper, Terminal, toast } from '../components/ui'
-import { ReactionTable, ReplyApproveAll } from '../components/reactions'
+import { ManualReactionModal, ReactionTable, ReplyApproveAll } from '../components/reactions'
+import { Report } from '../components/Report'
 import { LeadsTab } from './campaign/LeadsTab'
 import { MessagesTab, MSG_STATUS } from './campaign/MessagesTab'
 
-type Tab = 'leads' | 'messages' | 'log' | 'reactions' | 'brief'
+type Tab = 'leads' | 'messages' | 'log' | 'reactions' | 'report' | 'brief'
 
 export default function CampaignDetail() {
   const { id = '' } = useParams()
@@ -19,13 +21,14 @@ export default function CampaignDetail() {
   const runJobNow = useStore((s) => s.runJobNow)
   const cancelSchedule = useStore((s) => s.cancelSchedule)
   const campaign = db.campaigns.find((c) => c.id === id)
+  const [registering, setRegistering] = useState(false)
 
   if (!campaign) {
     return (
       <div className="card">
-        <Empty icon={<ListChecks size={22} />} title="キャンペーンが見つかりません">
-          <Link to="/campaigns" className="link">
-            キャンペーン一覧へ
+        <Empty icon={<ListChecks size={22} />} title="営業リストが見つかりません">
+          <Link to="/" className="link">
+            一覧へ
           </Link>
         </Empty>
       </div>
@@ -66,7 +69,6 @@ export default function CampaignDetail() {
           <div style={{ flex: '1 1 380px', minWidth: 0 }}>
             <div className="row wrap" style={{ gap: 8, marginBottom: 6 }}>
               <StagePill stage={st} />
-              <span className="muted small mono">{campaign.id}</span>
             </div>
             <h1 style={{ fontSize: 24, lineHeight: 1.35 }}>{campaign.name}</h1>
             <div className="row wrap" style={{ gap: 6, marginTop: 10 }}>
@@ -171,12 +173,12 @@ export default function CampaignDetail() {
               </span>
               <div className="grow">
                 <b>評価が完了しました</b>
-                <span className="small">結果と学びは評価レポートで確認できます。学びは次の文面作成で参照されます。</span>
+                <span className="small">結果と学びは「評価」タブで確認できます。学びは次の文面作成で参照されます。</span>
               </div>
-              <Link to={`/reports?campaign=${id}`} className="btn">
+              <button className="btn" onClick={() => go('report')}>
                 <ChartColumn size={16} />
-                評価レポート
-              </Link>
+                評価を見る
+              </button>
             </div>
           )}
         </div>
@@ -189,6 +191,7 @@ export default function CampaignDetail() {
             ['messages', '文面', msgs.length, st.step === 3 || st.label === 'SNSの手動送信待ち'],
             ['log', '送信ログ', sentLog.length, false],
             ['reactions', '反応', reactions.length, replyDrafts.length > 0],
+            ['report', '評価', null, false],
             ['brief', '商材と条件', null, false],
           ] as [Tab, string, number | null, boolean][]
         ).map(([k, label, n, alert]) => (
@@ -258,16 +261,20 @@ export default function CampaignDetail() {
       )}
       {tab === 'reactions' && (
         <>
-          {replyDrafts.length > 0 && (
-            <div className="row" style={{ justifyContent: 'flex-end', marginBottom: 12 }}>
-              <ReplyApproveAll ids={replyDrafts.map((r) => r.id)} />
-            </div>
-          )}
+          <div className="row wrap" style={{ justifyContent: 'flex-end', marginBottom: 12, gap: 8 }}>
+            <button className="btn" onClick={() => setRegistering(true)}>
+              <AtSign size={16} />
+              SNSの反応を登録
+            </button>
+            {replyDrafts.length > 0 && <ReplyApproveAll ids={replyDrafts.map((r) => r.id)} />}
+          </div>
           <div className="card">
             <ReactionTable reactions={reactions} />
           </div>
+          {registering && <ManualReactionModal campaignId={id} onClose={() => setRegistering(false)} />}
         </>
       )}
+      {tab === 'report' && <Report campaignId={id} />}
       {tab === 'brief' && (
         <div className="grid g-2">
           <div className="card">
