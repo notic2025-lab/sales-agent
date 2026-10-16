@@ -87,8 +87,8 @@ FigJam「営業エージェント 全体フロー（反応チェックと評価�
 1. [Firebase コンソール](https://console.firebase.google.com/) でプロジェクトを作り、**Firestore**（本番モード、ロケーションは asia-northeast1）と **Authentication › メール / パスワード** を有効にする
 2. プロジェクトの設定 › マイアプリで **ウェブアプリ** を追加し、`apiKey` / `authDomain` / `projectId` / `appId` を控える
 3. Authentication でユーザーを2つ作る：管理者（あなた）と、ランナー用（例：`runner@…`）
-4. Firestore に `members` コレクションを作り、ユーザーの UID をドキュメント ID にして `role` を入れる：管理者は `{ role: "admin" }`、ランナーは `{ role: "runner" }`
-5. ルールとインデックスを反映する（Java 21 以上と Firebase CLI が必要）：
+4. `firestore.rules` の `roleFor` に、管理者とランナーのメールアドレスを書く。初回ログイン時に、管理サイトとランナーが自分の役割（`members/<uid>`）を登録します
+5. ルールとインデックスを反映する（Firebase CLI が必要。エミュレーターを使わなければ Java は不要）：
 
 ```bash
 npx firebase-tools login
