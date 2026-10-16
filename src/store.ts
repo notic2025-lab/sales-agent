@@ -40,6 +40,7 @@ type Actions = {
   tick: () => void
   signIn: (email: string, password: string) => Promise<string | null>
   signOut: () => void
+  resetPassword: (email: string) => Promise<string | null>
 }
 
 export type Store = DB & { runner: Runner; session: Session } & Actions
@@ -50,6 +51,7 @@ export type Remote = {
   resync: () => void
   signIn: (email: string, password: string) => Promise<string | null>
   signOut: () => Promise<void>
+  resetPassword: (email: string) => Promise<string | null>
 }
 let remote: Remote | undefined
 
@@ -135,6 +137,7 @@ function actions(set: SetState, get: GetState): Actions {
 
     signIn: async (email, password) => (remote ? remote.signIn(email, password) : '接続の準備ができていません'),
     signOut: () => void remote?.signOut(),
+    resetPassword: async (email) => (remote ? remote.resetPassword(email) : '接続の準備ができていません'),
 
     // デモのランナー：DB の未処理ジョブを確認し、ClaudeCode（ここではシミュレーション）を1件ずつ実行する
     tick: () => {

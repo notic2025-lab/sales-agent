@@ -36,6 +36,9 @@ export async function connect(): Promise<Conn> {
   }
   if (process.env.FIREBASE_AUTH_EMULATOR_HOST) connectAuthEmulator(auth, `http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}`, { disableWarnings: true })
   const cred = await signInWithEmailAndPassword(auth, need('RUNNER_EMAIL'), need('RUNNER_PASSWORD'))
+  // 初回：firestore.rules の一覧にあるメールアドレスなら、自分の役割（runner）を登録できる
+  const me = doc(db, 'members', cred.user.uid)
+  if (!(await getDoc(me)).exists()) await setDoc(me, { role: 'runner', email: cred.user.email ?? '' }).catch(() => undefined)
   return { db, uid: cred.user.uid, email: cred.user.email ?? '' }
 }
 

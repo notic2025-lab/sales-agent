@@ -3,13 +3,14 @@
 // 書き込み：transitions.ts の結果と直前の状態を比べ、変わった行・項目だけを1つのバッチで書く
 // どの書き込みが許されるかは firestore.rules が決める（承認・送信予約は管理者だけ、など）
 import { initializeApp } from 'firebase/app'
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { getAuth, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import {
   collection,
   deleteField,
   doc,
   getDoc,
   initializeFirestore,
+  setDoc,
   limit,
   onSnapshot,
   orderBy,
@@ -70,7 +71,12 @@ export function connectFirebase(setState: (patch: Partial<Store>) => void): Remo
     const email = user.email ?? ''
     setState({ session: { status: 'loading', email } })
     try {
-      const member = await getDoc(doc(db, 'members', user.uid))
+      let member = await getDoc(doc(db, 'members', user.uid))
+      // 初回ログイン：firestore.rules の一覧にあるメールアドレスなら、自分の役割を登録できる
+      if (!member.exists()) {
+        await setDoc(doc(db, 'members', user.uid), { role: 'admin', email }).catch(() => undefined)
+        member = await getDoc(doc(db, 'members', user.uid))
+      }
       if (member.data()?.role !== 'admin') {
         setState({ session: { status: 'denied', email } })
         return
@@ -175,6 +181,15 @@ export function connectFirebase(setState: (patch: Partial<Store>) => void): Remo
       }
     },
     signOut: () => signOut(auth),
+    async resetPassword(email) {
+      try {
+        await sendPasswordResetEmail(auth, email)
+        return null
+      } catch (e) {
+        const code = (e as { code?: string }).code ?? ''
+        return AUTH_ERRORS[code] ?? message(e)
+      }
+    },
   }
 }
 

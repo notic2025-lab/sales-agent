@@ -50,9 +50,20 @@ service cloud.firestore {
           || (!suppressed(lead.email) && !suppressed(lead.email.split('@')[1])));
     }
 
+    // 管理者とランナーのメールアドレス。ここに載っている人だけが、初回ログイン時に自分の役割を登録できる
+    function roleFor(email) {
+      return email in ['contact.awai2025@gmail.com'] ? 'admin'
+        : email in ['runner@salesagent-notic.firebaseapp.com'] ? 'runner'
+        : '';
+    }
+
     match /members/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
-      allow write: if false; // Firebase コンソールで登録する
+      // 自分の役割を1回だけ登録できる（メールアドレスが上の一覧にある場合のみ）
+      allow create: if signedIn() && request.auth.uid == uid
+        && incoming().role == roleFor(request.auth.token.email) && incoming().role != ''
+        && incoming().keys().hasOnly(['role', 'email']);
+      allow update, delete: if false;
     }
 
     match /settings/{id} {

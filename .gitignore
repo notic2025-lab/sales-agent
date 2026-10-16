@@ -28,3 +28,4 @@ runner/.env
 runner/work
 runner/logs
 .env.local
+.env.local

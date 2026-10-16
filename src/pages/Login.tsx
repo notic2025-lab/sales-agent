@@ -21,6 +21,8 @@ export default function AuthGate() {
   const session = useStore((s) => s.session)
   const signIn = useStore((s) => s.signIn)
   const signOut = useStore((s) => s.signOut)
+  const resetPassword = useStore((s) => s.resetPassword)
+  const [notice, setNotice] = useState<string | null>(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -46,7 +48,7 @@ export default function AuthGate() {
             <b>{session.status === 'denied' ? 'このアカウントには管理者の権限がありません' : 'データを読み込めませんでした'}</b>
             <p className="muted small" style={{ marginTop: 6 }}>
               {session.status === 'denied'
-                ? `${session.email} を管理者として登録してください（Firestore の members コレクション）。`
+                ? `${session.email} は管理者の一覧（firestore.rules の roleFor）にありません。`
                 : session.error}
             </p>
           </div>
@@ -88,9 +90,26 @@ export default function AuthGate() {
             {error}
           </p>
         )}
+        {notice && <p className="small muted">{notice}</p>}
         <button className="btn btn-primary" type="submit" disabled={busy}>
           <LogIn size={16} />
           {busy ? 'ログイン中…' : 'ログイン'}
+        </button>
+        <button
+          type="button"
+          className="link small"
+          style={{ background: 'none', border: 0, padding: 0, textAlign: 'left' }}
+          onClick={async () => {
+            if (!email.trim()) {
+              setError('メールアドレスを入力してください')
+              return
+            }
+            const err = await resetPassword(email.trim())
+            setError(err)
+            if (!err) setNotice(`${email.trim()} にパスワード設定のメールを送りました`)
+          }}
+        >
+          パスワードを設定・再設定する（メールが届きます）
         </button>
         <a className="link small" href={demoUrl()}>
           デモ（架空のデータ）を見る
