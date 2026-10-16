@@ -1,8 +1,9 @@
 // 管理者の操作を「いまの DB → 変わる部分」の純粋な関数にしたもの。
 // デモはこの結果をそのまま localStorage に保存し、本番は変わった行だけを Firestore に書き込む。
 // 変わらない行は同じオブジェクトのまま返す（本番の差分書き込みが参照の一致で判定するため）。
-import type { Activity, Campaign, DB, LeadStatus, ReactionType, Sentiment, Settings } from '../types'
+import type { Activity, Campaign, DB, LeadStatus, ReactionType, RejectReason, Sentiment, Settings } from '../types'
 import { composeMessage, newJob } from './agent'
+import { REJECT_REASON, isAutoList } from './leads'
 import { uid } from '../lib/util'
 
 export type CampaignInput = Omit<Campaign, 'id' | 'createdAt'>
@@ -23,22 +24,43 @@ export function createCampaign(s: DB, input: CampaignInput, id: string, now: num
 
 export function setLeadStatus(s: DB, ids: string[], status: LeadStatus): Patch {
   const set_ = new Set(ids)
-  return { leads: s.leads.map((l) => (set_.has(l.id) && l.status !== status ? { ...l, status } : l)) }
+  return { leads: s.leads.map((l) => (set_.has(l.id) && l.status !== status ? { ...l, status, rejectReason: undefined } : l)) }
+}
+
+// 理由つきで除外する（次の収集で参照する）
+export function rejectLeads(s: DB, ids: string[], reason: RejectReason): Patch {
+  const set_ = new Set(ids)
+  return { leads: s.leads.map((l) => (set_.has(l.id) ? { ...l, status: 'rejected', rejectReason: reason } : l)) }
 }
 
 export function startDrafting(s: DB, campaignId: string, now: number): Patch {
   const hasMsg = new Set(s.messages.filter((m) => m.campaignId === campaignId).map((m) => m.leadId))
   const approved = s.leads.filter((l) => l.campaignId === campaignId && l.status === 'approved' && !hasMsg.has(l.id))
-  const pending = new Set(s.leads.filter((l) => l.campaignId === campaignId && l.status === 'pending').map((l) => l.id))
+  const campaign = s.campaigns.find((c) => c.id === campaignId)
+  // 手動承認では、承認しなかった企業を除外扱いにしてリストを確定する。自動承認では「要確認」のまま残す（見なくても送られない）
+  const pending = new Set(
+    campaign && isAutoList(campaign) ? [] : s.leads.filter((l) => l.campaignId === campaignId && l.status === 'pending').map((l) => l.id),
+  )
   if (!approved.length) return {}
   return {
-    // 承認しなかった企業は除外扱いにしてリストを確定する
     leads: s.leads.map((l) => (pending.has(l.id) ? { ...l, status: 'rejected' } : l)),
     jobs: [...s.jobs, newJob('draft-messages', campaignId, now)],
     activities: [
       act(now, `リストを承認しました（承認 ${approved.length}社${pending.size ? `・未確認 ${pending.size}社は除外` : ''}）`, campaignId),
       ...s.activities,
     ],
+  }
+}
+
+// 文面の段階で「この企業には送らない」。企業も理由つきで除外し、自動承認の精度の指標にする
+export function skipMessage(s: DB, id: string, reason: RejectReason, now: number): Patch {
+  const m = s.messages.find((x) => x.id === id)
+  if (!m || (m.status !== 'draft' && m.status !== 'approved')) return {}
+  const lead = s.leads.find((l) => l.id === m.leadId)
+  return {
+    messages: s.messages.map((x) => (x.id === id ? { ...x, status: 'skipped' } : x)),
+    leads: s.leads.map((l) => (l.id === m.leadId ? { ...l, status: 'rejected', rejectReason: reason } : l)),
+    activities: [act(now, `「${lead?.company ?? ''}」には送らないことにしました（${REJECT_REASON[reason]}）`, m.campaignId), ...s.activities],
   }
 }
 

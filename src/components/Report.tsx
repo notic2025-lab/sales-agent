@@ -2,7 +2,9 @@ import { ChartColumn, Lightbulb } from 'lucide-react'
 import { useStore } from '../store'
 import type { Message } from '../types'
 import { CHANNEL_LABEL } from '../data/agent'
-import { statsOf } from '../data/selectors'
+import { autoApprovalStats, statsOf } from '../data/selectors'
+import { REJECT_REASON } from '../data/leads'
+import type { RejectReason } from '../types'
 import { cx, fmtDate, pct, ratio } from '../lib/util'
 import { Empty, Switch, toast } from '../components/ui'
 
@@ -75,9 +77,54 @@ export function Report({ campaignId: campaign }: { campaignId: string }) {
   ]
   const total = breakdown.reduce((a, b) => a + b.v, 0)
   const insights = db.insights
+  const auto = autoApprovalStats(db, campaign)
+  const rejected = db.leads.filter((l) => l.campaignId === campaign && l.status === 'rejected' && l.rejectReason)
+  const byReason = new Map<RejectReason, number>()
+  for (const l of rejected) byReason.set(l.rejectReason!, (byReason.get(l.rejectReason!) ?? 0) + 1)
 
   return (
     <>
+      <section className="card" style={{ marginBottom: 18 }}>
+        <div className="card-head">
+          <h2>企業リストの精度</h2>
+          <span className="sub">自動承認した企業のうち、文面の段階であなたが「送らない」にした割合</span>
+        </div>
+        <div className="card-body row wrap" style={{ gap: 28, alignItems: 'flex-start' }}>
+          <div>
+            <div className="muted small">自動承認</div>
+            <div style={{ fontSize: 26, fontWeight: 700 }} className="num">
+              {auto.auto}社
+            </div>
+          </div>
+          <div>
+            <div className="muted small">そのうち送らなかった</div>
+            <div style={{ fontSize: 26, fontWeight: 700 }} className="num">
+              {auto.auto ? `${auto.skipped}社（${(auto.rate * 100).toFixed(0)}%）` : '—'}
+            </div>
+          </div>
+          <div style={{ flex: '1 1 260px' }}>
+            <div className="muted small">あなたが除外した理由（次の収集で参照されます）</div>
+            {rejected.length === 0 ? (
+              <p className="muted small">まだありません</p>
+            ) : (
+              <div className="row wrap" style={{ gap: 6, marginTop: 4 }}>
+                {[...byReason].map(([k, n]) => (
+                  <span className="tag" key={k}>
+                    {REJECT_REASON[k]} <b className="num">{n}</b>
+                  </span>
+                ))}
+              </div>
+            )}
+            <p className="muted small" style={{ marginTop: 8 }}>
+              {auto.auto === 0
+                ? 'このリストは手動承認です。新しい営業リストでは「エージェントに任せる」が選べます。'
+                : auto.rate <= 0.05
+                  ? 'ほぼ外していないので、企業リストの承認は任せたままで問題ありません。'
+                  : '外す割合が高めです。除外の理由が次の収集に渡るので、数回で下がっていきます。'}
+            </p>
+          </div>
+        </div>
+      </section>
       {evaluated.length === 0 ? (
         <div className="card">
           <Empty icon={<ChartColumn size={22} />} title="まだ評価したデータがありません">
@@ -171,7 +218,7 @@ export function Report({ campaignId: campaign }: { campaignId: string }) {
       <section className="card">
         <div className="card-head">
           <h2>エージェントの学び</h2>
-          <span className="sub">オンにした学びは、次の /draft-messages で参照されます</span>
+          <span className="sub">オンにした学びは、次に文面を作るときに参照されます（すべての営業リストで共通）</span>
         </div>
         <div className="card-body" style={{ paddingTop: 4 }}>
           {insights.length === 0 ? (

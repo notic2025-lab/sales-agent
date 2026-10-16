@@ -1,5 +1,6 @@
 import type { DB, Job, Message } from '../types'
 import { fmtDate, fmtDateTime } from '../lib/util'
+import { isAutoList } from './leads'
 
 export const STEPS = [
   { label: 'リスト収集', actor: 'agent' },
@@ -16,6 +17,13 @@ export type Stage = { step: number; label: string; tone: Tone; detail?: string }
 const isReplyJob = (j: Job) => (j.payload as { kind?: string } | undefined)?.kind === 'reply'
 const SENT: Message['status'][] = ['sent', 'manual_done', 'bounced']
 
+// 自動承認の精度：自動で承認した企業のうち、文面の段階で人が外した割合
+export function autoApprovalStats(db: DB, campaignId?: string) {
+  const leads = db.leads.filter((l) => l.autoApproved && (!campaignId || l.campaignId === campaignId))
+  const skipped = leads.filter((l) => l.status === 'rejected').length
+  return { auto: leads.length, skipped, rate: leads.length ? skipped / leads.length : 0 }
+}
+
 export function stageOf(db: DB, campaignId: string): Stage {
   const jobs = db.jobs.filter((j) => j.campaignId === campaignId)
   const live = (type: Job['type']) =>
@@ -28,8 +36,14 @@ export function stageOf(db: DB, campaignId: string): Stage {
   const draft = live('draft-messages')
   if (draft) return { step: 2, label: draft.status === 'running' ? '文面を作成中' : '文面作成の順番待ち', tone: 'agent' }
   if (!msgs.length) {
+    const campaign = db.campaigns.find((c) => c.id === campaignId)
     const pending = leads.filter((l) => l.status === 'pending').length
-    if (pending) return { step: 1, label: 'リストの承認待ち', tone: 'admin', detail: `${pending}社を確認` }
+    if (pending) {
+      // 自動承認で高確信の企業がなかったときだけ、人の確認が要る
+      return campaign && isAutoList(campaign)
+        ? { step: 1, label: '要確認の企業だけです', tone: 'admin', detail: `${pending}社を確認` }
+        : { step: 1, label: 'リストの承認待ち', tone: 'admin', detail: `${pending}社を確認` }
+    }
     return { step: 1, label: '承認する企業がありません', tone: 'wait' }
   }
   const send = live('send-approved')

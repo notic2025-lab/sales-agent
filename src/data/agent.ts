@@ -13,8 +13,10 @@ import type {
   Reaction,
   Sentiment,
 } from '../types'
+import type { Confidence } from '../types'
 import { HOUR, MIN, between, fmtDateTime, nextBusinessMorning, pick, shuffle, uid, type Rng } from '../lib/util'
 import { complianceFooter } from './checks'
+import { REJECT_REASON, isAutoList } from './leads'
 
 export const INDUSTRIES = ['飲食', '小売', '不動産', 'クリニック', '製造', '宿泊・観光', '美容', '教育'] as const
 export const REGIONS = ['東京', '神奈川', '埼玉', '千葉', '大阪', '京都', '愛知', '福岡'] as const
@@ -222,6 +224,16 @@ function makeLead(rng: Rng, campaign: Campaign, used: Set<string>, now: number):
 
   const pages = ['/', '/company', hasForm ? '/contact' : '/access', industry === '製造' ? '/products' : '/news']
 
+  // 自己チェック：条件との一致を根拠つきで確かめた結果の確信度
+  const industryOk = !cond.industries.length || cond.industries.includes(industry)
+  const regionOk = !cond.regions.length || cond.regions.includes(region)
+  // 規模や事業内容をサイトの引用で示せない企業（デモでは一部をランダムに）は「中」にして要確認に回す
+  const cited = rng() < 0.8
+  const confidence: Confidence =
+    !hasEmail && !hasForm || score < 40 ? 'low' : industryOk && regionOk && score >= 55 && cited ? 'high' : 'medium'
+  if (!cited) reasons.push('規模を示す記載がサイトで確認できず、要確認')
+  const summary = pick(rng, p.summaries)(region, n)
+
   return {
     id: uid('lead'),
     campaignId: campaign.id,
@@ -230,7 +242,7 @@ function makeLead(rng: Rng, campaign: Campaign, used: Set<string>, now: number):
     industry,
     region,
     employees,
-    summary: pick(rng, p.summaries)(region, n),
+    summary,
     email: hasEmail ? `${pick(rng, ['info', 'contact', 'sales', 'pr'])}@${domain}` : undefined,
     emailSource: hasEmail ? `https://${domain}/company` : undefined,
     formUrl: hasForm ? `https://${domain}/contact` : undefined,
@@ -240,6 +252,11 @@ function makeLead(rng: Rng, campaign: Campaign, used: Set<string>, now: number):
     scoreReasons: reasons,
     pages,
     status: 'pending',
+    confidence,
+    evidence: [
+      { url: `https://${domain}/company`, quote: summary },
+      ...(hasForm ? [{ url: `https://${domain}/contact`, quote: '法人のお客さまからのお問い合わせはこちら' }] : []),
+    ],
     createdAt: now,
   }
 }
@@ -360,24 +377,39 @@ function planCollect(db: DB, campaign: Campaign, rng: Rng, now: number): Planned
   const candidates: Lead[] = []
   for (let i = 0; i < found; i++) candidates.push(makeLead(rng, campaign, used, now))
   const suppressed = candidates.filter((l) => db.suppression.includes(l.domain))
-  // 配信停止リストに入っている企業は、二度と候補に入れない
+  // 配信停止リストと既存顧客に入っている企業は、二度と候補に入れない
   const extraSuppressed = Math.min(db.suppression.length, between(rng, 1, 2))
-  const pool = candidates.filter((l) => !db.suppression.includes(l.domain))
-  const leads = pool.sort((a, b) => b.score - a.score).slice(0, target)
+  const customers = new Set((db.settings.customerDomains ?? []).map((d) => d.toLowerCase()))
+  const pool = candidates.filter((l) => !db.suppression.includes(l.domain) && !customers.has(l.domain))
+  // 自己チェックで確信度が低い企業（連絡先が推測・条件に合う根拠がない）は落とす
+  const dropped = pool.filter((l) => l.confidence === 'low')
+  const leads = pool.filter((l) => l.confidence !== 'low').sort((a, b) => b.score - a.score).slice(0, target)
+  const high = leads.filter((l) => l.confidence === 'high').length
+  const auto = isAutoList(campaign)
+  const rejections = db.leads.filter((l) => l.status === 'rejected' && l.rejectReason)
+  const byReason = new Map<string, number>()
+  for (const l of rejections) byReason.set(l.rejectReason!, (byReason.get(l.rejectReason!) ?? 0) + 1)
   const q = [...campaign.conditions.industries, ...campaign.conditions.regions].slice(0, 3).join(' ') || campaign.product.name
   const sample = shuffle(rng, leads).slice(0, 3)
   const plan = [
-    `▸ キャンペーン「${campaign.name}」の商材と条件を読み込み`,
+    `▸ 営業リスト「${campaign.name}」の商材と条件を読み込み`,
+    rejections.length
+      ? `▸ 過去にあなたが除外した理由を参照：${[...byReason].map(([k, n]) => `${REJECT_REASON[k as keyof typeof REJECT_REASON]} ${n}`).join('／')}`
+      : '',
     `▸ 検索：「${q}」ほか ${between(rng, 3, 6)} クエリ`,
     `▸ 候補 ${found} 社を発見。企業サイトを巡回します`,
     ...sample.map((l) => `  · ${l.domain} — 事業内容・フォームURL・メールを確認`),
     `  · ほか ${found - sample.length} 社`,
-    `▸ 配信停止リストと照合：${suppressed.length + extraSuppressed} 社を除外`,
+    `▸ 除外ルールと照合：配信停止 ${suppressed.length + extraSuppressed} 社${customers.size ? `・既存顧客 ${candidates.length - pool.length - suppressed.length} 社` : ''}・個人事業主 ${between(rng, 0, 3)} 社を除外`,
     `▸ 条件との一致度と、連絡のしやすさでスコアを算出`,
-    `▸ 上位 ${leads.length} 社に絞り込み`,
-    `✓ 企業リスト ${leads.length} 社とスコアを保存しました`,
-  ]
-  return { plan, payload: { leads }, summary: `${leads.length}社を収集` }
+    `▸ 自己チェック：1社ずつ条件に合う根拠（URLと引用）を確認`,
+    `  · 根拠が出せない・連絡先が推測の ${dropped.length} 社を落としました`,
+    `▸ 上位 ${leads.length} 社に絞り込み（確信 高 ${high}／中 ${leads.length - high}）`,
+    auto
+      ? `✓ 確信の高い ${high} 社を承認して文面作成へ。要確認 ${leads.length - high} 社は保存だけしました`
+      : `✓ 企業リスト ${leads.length} 社とスコアを保存しました（あなたの承認待ち）`,
+  ].filter(Boolean)
+  return { plan, payload: { leads }, summary: auto ? `${leads.length}社を収集・${high}社を承認` : `${leads.length}社を収集` }
 }
 
 function activeInsights(db: DB) {
@@ -575,9 +607,24 @@ export function applyJob(db: DB, job: Job, now: number): Partial<DB> {
   switch (job.type) {
     case 'collect-leads': {
       const { leads } = job.payload as { leads: Lead[] }
+      const auto = campaign ? isAutoList(campaign) : false
+      const saved = leads.map((l) =>
+        auto && l.confidence === 'high' ? { ...l, status: 'approved' as const, autoApproved: true, createdAt: now } : { ...l, createdAt: now },
+      )
+      const approved = saved.filter((l) => l.status === 'approved').length
+      const review = saved.length - approved
       return {
-        leads: [...db.leads, ...leads.map((l) => ({ ...l, createdAt: now }))],
-        activities: [act(`「${campaign?.name}」の企業リスト ${leads.length} 社とスコアを保存しました`), ...db.activities],
+        leads: [...db.leads, ...saved],
+        // 自動承認した企業があれば、そのまま文面作成に進む
+        jobs: auto && approved ? [...db.jobs, newJob('draft-messages', job.campaignId, now)] : db.jobs,
+        activities: [
+          act(
+            auto
+              ? `「${campaign?.name}」の企業 ${saved.length} 社を集め、確信の高い ${approved} 社を承認して文面作成に進めました${review ? `（要確認 ${review} 社）` : ''}`
+              : `「${campaign?.name}」の企業リスト ${leads.length} 社とスコアを保存しました`,
+          ),
+          ...db.activities,
+        ],
       }
     }
     case 'draft-messages': {

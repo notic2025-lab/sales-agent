@@ -21,10 +21,16 @@ export type Campaign = {
   }
   channels: Channel[]
   evalAfterDays: number
+  // auto（既定）：確信度の高い企業はエージェントが承認し、すぐ文面作成へ。低いものは「要確認」として残る
+  // manual：すべて人が承認する
+  listApproval?: 'auto' | 'manual'
   createdAt: number
 }
 
 export type LeadStatus = 'pending' | 'approved' | 'rejected'
+export type Confidence = 'high' | 'medium' | 'low'
+// 人が企業を外したときの理由。次の収集で「過去に除外された傾向」として参照する
+export type RejectReason = 'industry' | 'size' | 'individual' | 'contact' | 'customer' | 'other'
 
 export type Lead = {
   id: string
@@ -45,6 +51,11 @@ export type Lead = {
   scoreReasons: string[]
   pages: string[]
   status: LeadStatus
+  // 条件に合う確信度と、その根拠（サイトの URL と引用）
+  confidence?: Confidence
+  evidence?: { url: string; quote: string }[]
+  autoApproved?: boolean
+  rejectReason?: RejectReason
   createdAt: number
 }
 
@@ -57,6 +68,8 @@ export type MessageStatus =
   | 'manual_pending'
   | 'manual_done'
   | 'bounced'
+  // 人が「この企業には送らない」と決めた
+  | 'skipped'
 
 export type Message = {
   id: string
@@ -158,6 +171,8 @@ export type Settings = {
   dailyLimit: number
   sendWindow: string
   skipWeekend: boolean
+  // 既存顧客のドメイン。収集の候補に入れない
+  customerDomains?: string[]
   runnerPaused: boolean
   runnerSpeed: 1 | 2 | 4
 }

@@ -1,6 +1,6 @@
 import { create, type StoreApi, type UseBoundStore } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import type { DB, Job, LeadStatus, ReactionType, Sentiment, Settings } from './types'
+import type { DB, Job, LeadStatus, ReactionType, RejectReason, Sentiment, Settings } from './types'
 import { applyJob, planJob } from './data/agent'
 import { createSeed, defaultSettings } from './data/seed'
 import * as T from './data/transitions'
@@ -21,6 +21,8 @@ export type Session = {
 type Actions = {
   createCampaign: (input: T.CampaignInput) => string
   setLeadStatus: (ids: string[], status: LeadStatus) => void
+  rejectLeads: (ids: string[], reason: RejectReason) => void
+  skipMessage: (id: string, reason: RejectReason) => void
   startDrafting: (campaignId: string) => void
   updateMessage: (id: string, patch: { subject?: string; body?: string }) => void
   setMessagesApproved: (ids: string[], approved: boolean) => void
@@ -111,6 +113,8 @@ function actions(set: SetState, get: GetState): Actions {
       return id
     },
     setLeadStatus: (ids, status) => commit((s) => T.setLeadStatus(s, ids, status)),
+    rejectLeads: (ids, reason) => commit((s) => T.rejectLeads(s, ids, reason)),
+    skipMessage: (id, reason) => commit((s, now) => T.skipMessage(s, id, reason, now)),
     startDrafting: (campaignId) => commit((s, now) => T.startDrafting(s, campaignId, now)),
     updateMessage: (id, patch) => commit((s) => T.updateMessage(s, id, patch)),
     setMessagesApproved: (ids, approved) => commit((s) => T.setMessagesApproved(s, ids, approved)),

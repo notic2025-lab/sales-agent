@@ -68,6 +68,9 @@ export const reactionsOf = async (db: Firestore, campaignId: string) =>
   rows<Reaction>(await getDocs(query(collection(db, 'reactions'), where('campaignId', '==', campaignId))))
 export const activeInsights = async (db: Firestore) =>
   rows<Insight>(await getDocs(query(collection(db, 'insights'), where('active', '==', true))))
+export const rejectedLeads = async (db: Firestore) => rows<Lead>(await getDocs(query(collection(db, 'leads'), where('status', '==', 'rejected'))))
+export const positiveReactions = async (db: Firestore) =>
+  rows<Reaction>(await getDocs(query(collection(db, 'reactions'), where('sentiment', '==', 'positive'))))
 export const queuedJobs = async (db: Firestore) => rows<Job>(await getDocs(query(collection(db, 'jobs'), where('status', '==', 'queued'))))
 export const runningJobs = async (db: Firestore) => rows<Job>(await getDocs(query(collection(db, 'jobs'), where('status', '==', 'running'))))
 export const sentSince = async (db: Firestore, t: number) =>

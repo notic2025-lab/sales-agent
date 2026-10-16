@@ -1,16 +1,19 @@
 import { useMemo, useState } from 'react'
-import { Ban, Building2, Check, CircleAlert, CircleCheck, FilePenLine, Lightbulb, Minus } from 'lucide-react'
+import { Ban, Bot, Building2, Check, CircleAlert, CircleCheck, ExternalLink, FilePenLine, Lightbulb, Minus } from 'lucide-react'
 import { useStore } from '../../store'
-import type { Lead, LeadStatus } from '../../types'
+import type { Lead, LeadStatus, RejectReason } from '../../types'
 import { CHANNEL_LABEL } from '../../data/agent'
+import { CONFIDENCE, REJECT_REASON, isAutoList } from '../../data/leads'
 import { cx } from '../../lib/util'
 import { CloseBtn, Contacts, Drawer, Empty, Pill, Score, toast } from '../../components/ui'
+import { RejectReasonModal } from '../../components/reject'
 
 const STATUS: Record<LeadStatus, { label: string; tone: string }> = {
   pending: { label: '確認待ち', tone: 'amber' },
   approved: { label: '承認', tone: 'ok' },
   rejected: { label: '除外', tone: '' },
 }
+const AUTO_STATUS: Record<LeadStatus, { label: string; tone: string }> = { ...STATUS, pending: { label: '要確認', tone: 'amber' } }
 
 type Filter = 'all' | LeadStatus
 
@@ -19,7 +22,12 @@ export function LeadsTab({ campaignId, drafting }: { campaignId: string; draftin
   const messages = useStore((s) => s.messages)
   const insights = useStore((s) => s.insights)
   const setLeadStatus = useStore((s) => s.setLeadStatus)
+  const rejectLeads = useStore((s) => s.rejectLeads)
   const startDrafting = useStore((s) => s.startDrafting)
+  const campaign = useStore((s) => s.campaigns.find((c) => c.id === campaignId))
+  const auto = campaign ? isAutoList(campaign) : true
+  const LABEL = auto ? AUTO_STATUS : STATUS
+  const [rejecting, setRejecting] = useState<string[] | null>(null)
   const leads = useMemo(() => allLeads.filter((l) => l.campaignId === campaignId).sort((a, b) => b.score - a.score), [allLeads, campaignId])
   const [filter, setFilter] = useState<Filter>(() => (leads.some((l) => l.status === 'pending') ? 'pending' : 'all'))
   const [sel, setSel] = useState<Set<string>>(new Set())
@@ -30,13 +38,16 @@ export function LeadsTab({ campaignId, drafting }: { campaignId: string; draftin
   const count = (f: LeadStatus) => leads.filter((l) => l.status === f).length
   const readyToDraft = leads.filter((l) => l.status === 'approved' && !hasMsg.has(l.id)).length
   const pending = count('pending')
+  const autoApproved = leads.filter((l) => l.autoApproved).length
   const scoreInsight = insights.find((i) => i.active && i.key === 'score')
   const allSel = shown.length > 0 && shown.every((l) => sel.has(l.id))
 
-  const apply = (selected: string[], status: LeadStatus) => {
-    // 文面を作成済みの企業は状態を変えない
-    const ids = selected.filter((id) => !hasMsg.has(id))
-    setLeadStatus(ids, status)
+  // 文面を作成済みの企業は状態を変えない
+  const editable = (selected: string[]) => selected.filter((id) => !hasMsg.has(id))
+  const apply = (selected: string[], status: LeadStatus, reason?: RejectReason) => {
+    const ids = editable(selected)
+    if (status === 'rejected' && reason) rejectLeads(ids, reason)
+    else setLeadStatus(ids, status)
     setSel(new Set())
     toast(
       ids.length
@@ -57,7 +68,22 @@ export function LeadsTab({ campaignId, drafting }: { campaignId: string; draftin
 
   return (
     <>
-      {(pending > 0 || readyToDraft > 0) && !drafting && (
+      {auto && autoApproved > 0 && (
+        <div className="banner green" style={{ marginBottom: 14 }}>
+          <span className="ic">
+            <Bot size={18} />
+          </span>
+          <div className="grow">
+            <b>確信の高い {autoApproved}社はエージェントが承認し、文面作成に進めました</b>
+            <span className="small">
+              {pending > 0
+                ? `要確認の ${pending}社は、見なくても送られません。時間があるときに承認か除外をしてください。`
+                : '文面の段階で「この企業には送らない」を選ぶと、その理由を次の収集で参照します。'}
+            </span>
+          </div>
+        </div>
+      )}
+      {(pending > 0 || readyToDraft > 0) && !drafting && !(auto && autoApproved > 0 && readyToDraft === 0) && (
         <div className="banner blue" style={{ marginBottom: 14 }}>
           <span className="ic">
             <FilePenLine size={18} />
@@ -88,7 +114,7 @@ export function LeadsTab({ campaignId, drafting }: { campaignId: string; draftin
         <div className="seg" role="group" aria-label="絞り込み">
           {(['all', 'pending', 'approved', 'rejected'] as Filter[]).map((f) => (
             <button key={f} className={filter === f ? 'on' : ''} onClick={() => setFilter(f)}>
-              {f === 'all' ? 'すべて' : STATUS[f].label} <span className="muted num">{f === 'all' ? leads.length : count(f)}</span>
+              {f === 'all' ? 'すべて' : LABEL[f].label} <span className="muted num">{f === 'all' ? leads.length : count(f)}</span>
             </button>
           ))}
         </div>
@@ -115,7 +141,7 @@ export function LeadsTab({ campaignId, drafting }: { campaignId: string; draftin
             <Check size={16} />
             承認する
           </button>
-          <button className="btn" onClick={() => apply([...sel], 'rejected')}>
+          <button className="btn" onClick={() => setRejecting([...sel])}>
             <Ban size={16} />
             除外する
           </button>
@@ -144,6 +170,7 @@ export function LeadsTab({ campaignId, drafting }: { campaignId: string; draftin
                 <th className="hide-sm">事業内容</th>
                 <th>連絡先</th>
                 <th>スコア</th>
+                <th className="hide-sm">確信</th>
                 <th>状態</th>
               </tr>
             </thead>
@@ -180,10 +207,19 @@ export function LeadsTab({ campaignId, drafting }: { campaignId: string; draftin
                   <td>
                     <Score value={l.score} />
                   </td>
+                  <td className="hide-sm">
+                    {l.confidence && (
+                      <Pill tone={CONFIDENCE[l.confidence].tone} sm>
+                        {CONFIDENCE[l.confidence].label}
+                      </Pill>
+                    )}
+                  </td>
                   <td>
-                    <Pill tone={STATUS[l.status].tone} dot sm>
-                      {STATUS[l.status].label}
+                    <Pill tone={LABEL[l.status].tone} dot sm>
+                      {LABEL[l.status].label}
+                      {l.status === 'approved' && l.autoApproved ? '（自動）' : ''}
                     </Pill>
+                    {l.status === 'rejected' && l.rejectReason && <div className="muted small">{REJECT_REASON[l.rejectReason]}</div>}
                   </td>
                 </tr>
               ))}
@@ -193,13 +229,45 @@ export function LeadsTab({ campaignId, drafting }: { campaignId: string; draftin
         {shown.length === 0 && <Empty icon={<Building2 size={22} />} title="該当する企業はありません" />}
       </div>
 
-      {open && <LeadDrawer lead={leads.find((l) => l.id === open.id) ?? open} locked={hasMsg.has(open.id)} onClose={() => setOpen(null)} onSet={(s) => setLeadStatus([open.id], s)} />}
+      {open && (
+        <LeadDrawer
+          lead={leads.find((l) => l.id === open.id) ?? open}
+          label={LABEL}
+          locked={hasMsg.has(open.id)}
+          onClose={() => setOpen(null)}
+          onSet={(s) => setLeadStatus([open.id], s)}
+          onReject={() => setRejecting([open.id])}
+        />
+      )}
+      {rejecting && (
+        <RejectReasonModal
+          title={rejecting.length === 1 ? `${leads.find((l) => l.id === rejecting[0])?.company ?? ''} を除外` : `${rejecting.length}社を除外`}
+          count={editable(rejecting).length}
+          onClose={() => setRejecting(null)}
+          onPick={(reason) => apply(rejecting, 'rejected', reason)}
+        />
+      )}
     </>
   )
 }
 
-function LeadDrawer({ lead, locked, onClose, onSet }: { lead: Lead; locked: boolean; onClose: () => void; onSet: (s: LeadStatus) => void }) {
+function LeadDrawer({
+  lead,
+  label,
+  locked,
+  onClose,
+  onSet,
+  onReject,
+}: {
+  lead: Lead
+  label: Record<LeadStatus, { label: string; tone: string }>
+  locked: boolean
+  onClose: () => void
+  onSet: (s: LeadStatus) => void
+  onReject: () => void
+}) {
   const negative = (r: string) => /少なく|見つからず|限定的/.test(r)
+  const STATUS = label
   return (
     <Drawer onClose={onClose}>
       <div className="drawer-head">
@@ -207,7 +275,13 @@ function LeadDrawer({ lead, locked, onClose, onSet }: { lead: Lead; locked: bool
           <div className="row" style={{ gap: 8, marginBottom: 4 }}>
             <Pill tone={STATUS[lead.status].tone} dot sm>
               {STATUS[lead.status].label}
+              {lead.status === 'approved' && lead.autoApproved ? '（自動）' : ''}
             </Pill>
+            {lead.confidence && (
+              <Pill tone={CONFIDENCE[lead.confidence].tone} sm>
+                {CONFIDENCE[lead.confidence].label}
+              </Pill>
+            )}
             <span className="muted small mono">{lead.domain}</span>
           </div>
           <h2>{lead.company}</h2>
@@ -244,6 +318,25 @@ function LeadDrawer({ lead, locked, onClose, onSet }: { lead: Lead; locked: bool
           <div className="section-title">事業内容</div>
           <p style={{ lineHeight: 1.8 }}>{lead.summary}</p>
         </div>
+        {lead.evidence && lead.evidence.length > 0 && (
+          <div>
+            <div className="section-title">条件に合うと判断した根拠（サイトからの引用）</div>
+            <ul className="reasons">
+              {lead.evidence.map((e, i) => (
+                <li key={i} style={{ display: 'block' }}>
+                  <span style={{ display: 'block' }}>「{e.quote}」</span>
+                  <a href={e.url} target="_blank" rel="noreferrer" className="link small mono" style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                    {e.url}
+                    <ExternalLink size={11} />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {lead.status === 'rejected' && lead.rejectReason && (
+          <p className="muted small">除外の理由：{REJECT_REASON[lead.rejectReason]}</p>
+        )}
         <div>
           <div className="section-title">連絡先</div>
           <dl className="kv">
@@ -286,7 +379,7 @@ function LeadDrawer({ lead, locked, onClose, onSet }: { lead: Lead; locked: bool
                 確認待ちに戻す
               </button>
             )}
-            <button className="btn" disabled={lead.status === 'rejected'} onClick={() => onSet('rejected')}>
+            <button className="btn" disabled={lead.status === 'rejected'} onClick={onReject}>
               <Ban size={16} />
               除外
             </button>

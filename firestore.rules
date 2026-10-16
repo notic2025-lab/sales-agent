@@ -73,15 +73,24 @@ service cloud.firestore {
 
     match /leads/{id} {
       allow read: if isMember();
-      // ランナーは「承認待ち」の企業だけを追加できる。配信停止リストの企業は追加できない
+      // ランナーは「承認待ち」で追加する。営業リストが自動承認のときだけ、根拠つきで確信「高」の企業を承認済みで追加できる。
+      // 配信停止リストの企業は追加できない
       allow create: if isRunner()
-        && incoming().status == 'pending'
-        && !suppressed(incoming().domain);
-      // 承認・除外は人だけ
+        && !suppressed(incoming().domain)
+        && (incoming().status == 'pending' || (incoming().status == 'approved' && autoApprovable()));
+      // 承認・除外（理由つき）は人だけ
       allow update: if isAdmin()
-        && onlyChanges(['status'])
+        && onlyChanges(['status', 'rejectReason'])
         && incoming().status in ['pending', 'approved', 'rejected'];
       allow delete: if false;
+
+      function autoApprovable() {
+        let c = get(/databases/$(database)/documents/campaigns/$(incoming().campaignId)).data;
+        return (!('listApproval' in c) || c.listApproval != 'manual')
+          && incoming().confidence == 'high'
+          && incoming().autoApproved == true
+          && incoming().evidence is list && incoming().evidence.size() > 0;
+      }
     }
 
     match /messages/{id} {
@@ -94,8 +103,8 @@ service cloud.firestore {
         return
           // 下書き・承認済みの文面を直す
           (onlyChanges(['subject', 'body', 'edited']) && resource.data.status in ['draft', 'approved'])
-          // 承認する・承認を取り消す（書き直しの依頼も下書きに戻す）
-          || (onlyChanges(['status']) && (from('draft', 'approved') || from('approved', 'draft')))
+          // 承認する・承認を取り消す（書き直しの依頼も下書きに戻す）・この企業には送らない
+          || (onlyChanges(['status']) && (from('draft', 'approved') || from('approved', 'draft') || from('draft', 'skipped') || from('approved', 'skipped')))
           // 送信前の最終確認をして予約する（確認した人を残す）
           || (onlyChanges(['status', 'scheduledAt', 'scheduledBy']) && from('approved', 'scheduled')
             && incoming().scheduledAt is int

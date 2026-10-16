@@ -9,8 +9,9 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { doc, setDoc, updateDoc, writeBatch, type Firestore } from 'firebase/firestore'
-import type { Campaign, Channel, Insight, Job, JobType, Lead, Message, Reaction, Settings } from '../src/types.ts'
+import type { Campaign, Channel, Confidence, Insight, Job, JobType, Lead, Message, Reaction, RejectReason, Settings } from '../src/types.ts'
 import { checkMessage, checkReply, complianceFooter, emailDomain, hasError } from '../src/data/checks.ts'
+import { REJECT_REASON, isAutoList, normalizeDomain } from '../src/data/leads.ts'
 import { isOpen, jstDateKey, jstDayStart, nextOpen } from '../src/data/sendPlan.ts'
 import { SEND_MODE, WORK_DIR, opt } from './lib/env.ts'
 import * as F from './lib/firebase.ts'
@@ -137,12 +138,27 @@ async function context(jobId?: string) {
     const leads = await F.leadsOf(db, campaign.id)
     const recent = await F.sentSince(db, Date.now() - 90 * DAY)
     const recentLeads = await F.leadsByIds(db, recent.map((m) => m.leadId))
+    // 過去にあなたが除外した理由と、前向きな返信があった企業の特徴を、次の収集の参考として渡す
+    const rejected = (await F.rejectedLeads(db)).filter((l) => l.rejectReason)
+    const byReason: Record<string, { label: string; count: number; examples: object[] }> = {}
+    for (const l of rejected) {
+      const r = l.rejectReason as RejectReason
+      byReason[r] ??= { label: REJECT_REASON[r], count: 0, examples: [] }
+      byReason[r].count++
+      if (byReason[r].examples.length < 3) byReason[r].examples.push({ industry: l.industry, region: l.region, employees: l.employees, summary: l.summary })
+    }
+    const positive = await F.positiveReactions(db)
+    const positiveLeads = await F.leadsByIds(db, positive.map((r) => r.leadId))
     return print({
       ...base,
+      listApproval: isAutoList(campaign) ? 'auto' : 'manual',
       targetCount: campaign.conditions.count,
       suppression: await F.listSuppression(db),
+      customerDomains: settings.customerDomains ?? [],
       alreadyListed: leads.map((l) => l.domain),
       contactedLast90Days: [...new Set([...recentLeads.values()].map((l) => l.domain))],
+      pastRejections: byReason,
+      repliedPositively: [...positiveLeads.values()].slice(0, 10).map((l) => ({ industry: l.industry, region: l.region, employees: l.employees, summary: l.summary })),
     })
   }
   if (job.type === 'draft-messages') {
@@ -196,14 +212,21 @@ async function context(jobId?: string) {
 // ──────────────────────────────────────────────
 // /collect-leads
 
-type LeadInput = Partial<Omit<Lead, 'id' | 'campaignId' | 'status' | 'createdAt'>>
+type LeadInput = Partial<Omit<Lead, 'id' | 'campaignId' | 'status' | 'createdAt' | 'autoApproved' | 'rejectReason'>> & {
+  // 除外ルール（エージェントがサイトで確かめて付ける）
+  individual?: boolean
+  noSolicitation?: boolean
+}
 
 async function saveLeads(jobId: string | undefined, file: string | true | undefined) {
   const ctx = await open(jobId, ['collect-leads'])
   const { db, campaign } = ctx
   const input = readJson<LeadInput[]>(ctx, file)
   if (!Array.isArray(input)) refuse('企業の配列を渡してください')
+  const settings = await F.getSettings(db)
+  const auto = isAutoList(campaign)
   const suppression = new Set(await F.listSuppression(db))
+  const customers = new Set((settings.customerDomains ?? []).map(normalizeDomain))
   const existing = new Set((await F.leadsOf(db, campaign.id)).map((l) => lower(l.domain)))
   const recent = await F.sentSince(db, Date.now() - 90 * DAY)
   const recentDomains = new Set([...(await F.leadsByIds(db, recent.map((m) => m.leadId))).values()].map((l) => lower(l.domain)))
@@ -234,6 +257,26 @@ async function saveLeads(jobId: string | undefined, file: string | true | undefi
       skip('配信停止リストに入っています')
       continue
     }
+    if (customers.has(domain)) {
+      skip('既存顧客・取引先です')
+      continue
+    }
+    if (x.individual) {
+      skip('個人・個人事業主です')
+      continue
+    }
+    if (x.noSolicitation) {
+      skip('営業目的の連絡を断っています')
+      continue
+    }
+    const evidence = (x.evidence ?? []).filter((e) => e && typeof e.url === 'string' && typeof e.quote === 'string' && e.quote.trim()).slice(0, 5)
+    // 根拠（URL と引用）がない企業は「高」にしない。自動承認は高だけ
+    let confidence: Confidence = x.confidence === 'high' || x.confidence === 'medium' || x.confidence === 'low' ? x.confidence : 'medium'
+    if (confidence === 'high' && !evidence.length) confidence = 'medium'
+    if (confidence === 'low') {
+      skip('条件に合う根拠がありません（確信 低）')
+      continue
+    }
     if (existing.has(domain) || ok.some((l) => l.domain === domain)) {
       skip('すでにリストにあります')
       continue
@@ -259,7 +302,10 @@ async function saveLeads(jobId: string | undefined, file: string | true | undefi
       score: Math.max(0, Math.min(100, Math.round(Number(x.score) || 0))),
       scoreReasons: (x.scoreReasons ?? []).slice(0, 8),
       pages: (x.pages ?? []).slice(0, 12),
-      status: 'pending',
+      status: auto && confidence === 'high' ? 'approved' : 'pending',
+      autoApproved: auto && confidence === 'high' ? true : undefined,
+      confidence,
+      evidence,
       createdAt: now,
     })
   }
@@ -269,8 +315,21 @@ async function saveLeads(jobId: string | undefined, file: string | true | undefi
     for (const l of leads.slice(i, i + 400)) batch.set(doc(db, 'leads', l.id), l)
     await batch.commit()
   }
-  await F.addActivity(db, `「${campaign.name}」の企業リスト ${leads.length} 社とスコアを保存しました（承認待ち）`, campaign.id)
-  print({ saved: leads.length, skipped })
+  const approved = leads.filter((l) => l.status === 'approved').length
+  const review = leads.length - approved
+  if (auto && approved) {
+    // 自動承認した企業があれば、そのまま文面作成に進む
+    const jobs = await F.queuedJobs(db)
+    if (!jobs.some((j) => j.campaignId === campaign.id && j.type === 'draft-messages')) await createJob(db, 'draft-messages', campaign.id, Date.now())
+    await F.addActivity(
+      db,
+      `「${campaign.name}」の企業 ${leads.length} 社を集め、確信の高い ${approved} 社を承認して文面作成に進めました${review ? `（要確認 ${review} 社）` : ''}`,
+      campaign.id,
+    )
+  } else {
+    await F.addActivity(db, `「${campaign.name}」の企業リスト ${leads.length} 社とスコアを保存しました（承認待ち）`, campaign.id)
+  }
+  print({ saved: leads.length, autoApproved: approved, needsReview: review, skipped })
 }
 
 // ──────────────────────────────────────────────

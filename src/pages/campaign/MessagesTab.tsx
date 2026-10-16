@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarClock, CalendarX, Check, Copy, FilePenLine, Lightbulb, RotateCcw, Send, ShieldCheck, Undo2 } from 'lucide-react'
+import { Ban, CalendarClock, CalendarX, Check, Copy, FilePenLine, Lightbulb, RotateCcw, Send, ShieldCheck, Undo2 } from 'lucide-react'
 import { useStore } from '../../store'
 import type { Lead, Message, MessageStatus } from '../../types'
 import { hasError } from '../../data/checks'
@@ -7,6 +7,7 @@ import { IS_DEMO } from '../../data/backend'
 import { cx, fmtDateTime } from '../../lib/util'
 import { CHANNEL_ICON, ChannelLabel, Empty, Pill, toast } from '../../components/ui'
 import { CheckBadge, FinalReviewModal, MessageChecks, SendPreview, useCheckEnv } from '../../components/review'
+import { RejectReasonModal } from '../../components/reject'
 
 export const MSG_STATUS: Record<MessageStatus, { label: string; tone: string }> = {
   draft: { label: '確認待ち', tone: 'amber' },
@@ -17,6 +18,7 @@ export const MSG_STATUS: Record<MessageStatus, { label: string; tone: string }> 
   manual_pending: { label: '手動送信待ち', tone: 'amber' },
   manual_done: { label: '手動送信済み', tone: 'ok' },
   bounced: { label: '不達', tone: 'warn' },
+  skipped: { label: '送らない', tone: '' },
 }
 
 const PATTERN = { A: '課題提起型', B: '事例紹介型' }
@@ -192,12 +194,14 @@ function Editor({ message: m, lead, onApproveNext }: { message: Message; lead: L
   const setApproved = useStore((s) => s.setMessagesApproved)
   const rewrite = useStore((s) => s.rewriteMessage)
   const markManualDone = useStore((s) => s.markManualDone)
+  const skipMessage = useStore((s) => s.skipMessage)
   const insights = useStore((s) => s.insights)
   const settings = useStore((s) => s.settings)
   const env = useCheckEnv(m.campaignId)
   const [subject, setSubject] = useState(m.subject)
   const [body, setBody] = useState(m.body)
   const [ack, setAck] = useState(false)
+  const [skipping, setSkipping] = useState(false)
   const editable = m.status === 'draft' || m.status === 'approved'
   const dirty = subject !== m.subject || body !== m.body
   const used = insights.filter((i) => m.insightIds.includes(i.id))
@@ -310,6 +314,10 @@ function Editor({ message: m, lead, onApproveNext }: { message: Message; lead: L
 
         {editable && (
           <div className="row wrap" style={{ gap: 8, justifyContent: 'flex-end', marginTop: 'auto' }}>
+            <button className="btn btn-ghost" onClick={() => setSkipping(true)} title="この企業を除外します。理由は次の収集で参照されます">
+              <Ban size={16} />
+              この企業には送らない
+            </button>
             <button
               className="btn"
               onClick={() => {
@@ -344,6 +352,17 @@ function Editor({ message: m, lead, onApproveNext }: { message: Message; lead: L
               </button>
             )}
           </div>
+        )}
+        {skipping && (
+          <RejectReasonModal
+            title={`${lead.company} には送らない`}
+            count={1}
+            onClose={() => setSkipping(false)}
+            onPick={(reason) => {
+              skipMessage(m.id, reason)
+              toast(`${lead.company} には送らないことにしました`)
+            }}
+          />
         )}
         {editable && m.status === 'draft' && needsAck && (
           <label className={cx('confirm', 'amber')}>

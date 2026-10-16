@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bot, Check, Rocket } from 'lucide-react'
+import { Bot, Check, Rocket, ShieldCheck, UserCheck } from 'lucide-react'
 import { useStore } from '../store'
 import type { Channel } from '../types'
 import { CHANNEL_LABEL, INDUSTRIES, REGIONS, SIZES } from '../data/agent'
@@ -32,6 +32,7 @@ export default function CampaignNew() {
   const [keywords, setKeywords] = useState('複数施設、館内案内、インバウンド')
   const [channels, setChannels] = useState<Channel[]>(['email', 'form'])
   const [evalAfterDays, setEval] = useState(7)
+  const [listApproval, setListApproval] = useState<'auto' | 'manual'>('auto')
 
   const autoName = `${product.name || '商材'}｜${industries.length ? industries.join('・') : '業種指定なし'}`
   const toggle = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v])
@@ -45,6 +46,7 @@ export default function CampaignNew() {
       conditions: { industries, regions, size, count, keywords },
       channels,
       evalAfterDays,
+      listApproval,
     })
     toast('営業リストを作成しました。エージェントが企業を集め始めます')
     nav(`/lists/${id}`)
@@ -150,7 +152,34 @@ export default function CampaignNew() {
           <section className="form-section">
             <div className="lead">
               <h3>
-                <span className="step-no">3</span>連絡の方法
+                <span className="step-no">3</span>企業リストの承認
+              </h3>
+              <p>集めた企業を誰が承認するかです。文面の承認と送信前の最終確認は、どちらでも必ずあなたが行います。</p>
+            </div>
+            <div className="fields">
+              {(
+                [
+                  ['auto', ShieldCheck, 'エージェントに任せる', '条件に合う根拠を確かめた確信の高い企業だけを承認し、すぐ文面作成へ。迷う企業は「要確認」として残り、見なくても送られません'],
+                  ['manual', UserCheck, 'すべて自分で承認する', '集めた企業を1社ずつ確認してから文面作成に進みます'],
+                ] as const
+              ).map(([k, Icon, title, desc]) => (
+                <button type="button" key={k} className={cx('choice', listApproval === k && 'on')} onClick={() => setListApproval(k)} aria-pressed={listApproval === k}>
+                  <span className="ic">
+                    <Icon size={18} />
+                  </span>
+                  <span>
+                    <b>{title}</b>
+                    <small>{desc}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="form-section">
+            <div className="lead">
+              <h3>
+                <span className="step-no">4</span>連絡の方法
               </h3>
               <p>見つかった連絡先のうち、上から順に使います。</p>
             </div>
@@ -176,7 +205,7 @@ export default function CampaignNew() {
           <section className="form-section">
             <div className="lead">
               <h3>
-                <span className="step-no">4</span>評価
+                <span className="step-no">5</span>評価
               </h3>
               <p>送信から何日後に、返信・配信停止・不達をまとめてチェックするかを決めます。</p>
             </div>
@@ -217,7 +246,12 @@ export default function CampaignNew() {
               <span className="sub">  件数：{count} ・ 評価：送信の{evalAfterDays}日後</span>
             </div>
             <ol className="reasons">
-              {['検索と企業サイトの巡回（事業内容・フォームURL・メール）', '配信停止リストに入っている企業を除外', '企業リストとスコアを保存 → あなたの承認待ちへ'].map((t, i) => (
+              {[
+                '検索と企業サイトの巡回（事業内容・フォームURL・メール）',
+                '除外ルールと照合（配信停止・既存顧客・個人事業主・営業お断り）',
+                '1社ずつ条件に合う根拠を確認し、確信度を付ける',
+                listApproval === 'auto' ? '確信の高い企業を承認して文面作成へ（迷う企業は要確認）' : '企業リストとスコアを保存 → あなたの承認待ちへ',
+              ].map((t, i) => (
                 <li key={i}>
                   <span className="step-no" style={{ width: 18, height: 18, fontSize: 11 }}>
                     {i + 1}

@@ -84,6 +84,7 @@ export function createSeed(now = Date.now(), seed = 172): DB {
       conditions: { industries: ['飲食'], regions: ['東京', '神奈川', '埼玉', '千葉'], size: '11〜50名', count: 48, keywords: '複数店舗、季節メニュー、店頭POP' },
       channels: ['email', 'form', 'sns'],
       evalAfterDays: 7,
+      listApproval: 'manual',
       createdAt: t1,
     },
     c1,
@@ -93,6 +94,10 @@ export function createSeed(now = Date.now(), seed = 172): DB {
     const ls = db.leads.filter((l) => l.campaignId === c1).sort((a, b) => b.score - a.score)
     const ok = new Set(ls.slice(0, 42).map((l) => l.id))
     db = { ...db, leads: db.leads.map((l) => (l.campaignId === c1 ? { ...l, status: ok.has(l.id) ? 'approved' : 'rejected' } : l)) }
+    // 除外した理由を残しておく（次の収集で参照される）
+    const reasons = ['size', 'individual', 'contact', 'size', 'industry', 'size'] as const
+    let k = 0
+    db = { ...db, leads: db.leads.map((l) => (l.campaignId === c1 && l.status === 'rejected' ? { ...l, rejectReason: reasons[k++ % reasons.length] } : l)) }
     admin(at(now, 15, 11, 4), 'リストを承認しました（承認 42社・除外 6社）', c1)
   }
   run('draft-messages', c1, at(now, 15, 11, 6))
@@ -179,6 +184,7 @@ export function createSeed(now = Date.now(), seed = 172): DB {
       conditions: { industries: ['不動産'], regions: ['東京', '大阪'], size: '指定なし', count: 30, keywords: '駅前店舗、物件チラシ、店頭掲示' },
       channels: ['email', 'form'],
       evalAfterDays: 5,
+      listApproval: 'manual',
       createdAt: t2,
     },
     c2,
@@ -206,6 +212,7 @@ export function createSeed(now = Date.now(), seed = 172): DB {
       conditions: { industries: ['製造'], regions: ['愛知', '大阪', '京都'], size: '51〜300名', count: 26, keywords: '複数工場、保守点検、設備管理' },
       channels: ['email', 'form'],
       evalAfterDays: 7,
+      listApproval: 'manual',
       createdAt: t3,
     },
     c3,

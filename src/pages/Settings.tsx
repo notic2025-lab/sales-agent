@@ -12,7 +12,9 @@ export default function Settings() {
   const update = useStore((s) => s.updateSettings)
   const reset = useStore((s) => s.resetDemo)
   const [form, setForm] = useState(settings)
-  const dirty = JSON.stringify(form) !== JSON.stringify(settings)
+  const [customers, setCustomers] = useState((settings.customerDomains ?? []).join('\n'))
+  const customerList = customers.split(/[\n,、\s]+/).map((d) => d.trim().toLowerCase()).filter(Boolean)
+  const dirty = JSON.stringify({ ...form, customerDomains: customerList }) !== JSON.stringify({ ...settings, customerDomains: settings.customerDomains ?? [] })
 
   return (
     <>
@@ -26,7 +28,7 @@ export default function Settings() {
             className="btn btn-primary"
             disabled={!dirty}
             onClick={() => {
-              update(form)
+              update({ ...form, customerDomains: customerList })
               toast('設定を保存しました。次に作成する文面から反映されます')
             }}
           >
@@ -100,6 +102,21 @@ export default function Settings() {
                 <div className="muted small">週明けの朝にまとめて送ります</div>
               </div>
               <Switch on={form.skipWeekend} label="土日は送らない" onChange={(v) => setForm({ ...form, skipWeekend: v })} />
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div className="card" style={{ marginBottom: 18 }}>
+        <section className="form-section">
+          <div className="lead">
+            <h3>既存顧客・取引先</h3>
+            <p>ここに入れたドメインの企業は、企業リストの候補に入りません。</p>
+          </div>
+          <div className="fields">
+            <div className="field">
+              <label htmlFor="cust">ドメイン（1行に1つ）</label>
+              <textarea id="cust" className="textarea mono" rows={4} value={customers} onChange={(e) => setCustomers(e.target.value)} placeholder={'example.co.jp\nexample.com'} />
             </div>
           </div>
         </section>
