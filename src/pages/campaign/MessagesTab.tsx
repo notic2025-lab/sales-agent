@@ -3,6 +3,7 @@ import { Ban, CalendarClock, CalendarX, Check, Copy, FilePenLine, Lightbulb, Rot
 import { useStore } from '../../store'
 import type { Lead, Message, MessageStatus } from '../../types'
 import { hasError } from '../../data/checks'
+import { isAutoSend } from '../../data/leads'
 import { IS_DEMO } from '../../data/backend'
 import { cx, fmtDateTime } from '../../lib/util'
 import { CHANNEL_ICON, ChannelLabel, Empty, Pill, toast } from '../../components/ui'
@@ -36,6 +37,8 @@ export function MessagesTab({ campaignId, initialFilter }: { campaignId: string;
   const allMessages = useStore((s) => s.messages)
   const leads = useStore((s) => s.leads)
   const jobs = useStore((s) => s.jobs)
+  const campaign = useStore((s) => s.campaigns.find((c) => c.id === campaignId))
+  const autoSend = campaign ? isAutoSend(campaign) : true
   const cancelSchedule = useStore((s) => s.cancelSchedule)
   const env = useCheckEnv(campaignId)
   const msgs = useMemo(() => allMessages.filter((m) => m.campaignId === campaignId), [allMessages, campaignId])
@@ -84,7 +87,20 @@ export function MessagesTab({ campaignId, initialFilter }: { campaignId: string;
 
   return (
     <>
-      {reviewing > 0 && (
+      {autoSend && reviewing > 0 && (
+        <div className="banner" style={{ marginBottom: 14 }}>
+          <span className="ic">
+            <ShieldCheck size={18} />
+          </span>
+          <div className="grow">
+            <b>要確認の文面が {reviewing}件あります（自動チェックを通らなかったもの）</b>
+            <span className="small">
+              見なくても送られません。直して「承認」すると、そのまま送信予約に入ります。合わない企業は「この企業には送らない」で外してください。
+            </span>
+          </div>
+        </div>
+      )}
+      {!autoSend && reviewing > 0 && (
         <div className="banner blue" style={{ marginBottom: 14 }}>
           <span className="ic">
             <ShieldCheck size={18} />
@@ -198,6 +214,10 @@ function Editor({ message: m, lead, onApproveNext }: { message: Message; lead: L
   const insights = useStore((s) => s.insights)
   const settings = useStore((s) => s.settings)
   const env = useCheckEnv(m.campaignId)
+  const autoSend = useStore((s) => {
+    const c = s.campaigns.find((x) => x.id === m.campaignId)
+    return c ? isAutoSend(c) : true
+  })
   const [subject, setSubject] = useState(m.subject)
   const [body, setBody] = useState(m.body)
   const [ack, setAck] = useState(false)
@@ -332,10 +352,24 @@ function Editor({ message: m, lead, onApproveNext }: { message: Message; lead: L
               <RotateCcw size={16} />
               別パターンで書き直す
             </button>
-            {m.status === 'approved' ? (
-              <button className="btn" onClick={() => setApproved([m.id], false)}>
-                <Undo2 size={16} />
-                承認を取り消す
+              {m.status === 'approved' ? (
+                <button className="btn" onClick={() => setApproved([m.id], false)}>
+                  <Undo2 size={16} />
+                  承認を取り消す
+                </button>
+            ) : autoSend ? (
+              <button
+                className="btn btn-primary"
+                disabled={blocked}
+                title={blocked ? '自動チェックで送れない項目があります' : undefined}
+                onClick={() => {
+                  save()
+                  setApproved([m.id], true)
+                  toast(`${lead.company} の文面を送信予約に入れました`)
+                }}
+              >
+                <Send size={16} />
+                承認して送信予約へ
               </button>
             ) : (
               <button
@@ -383,6 +417,14 @@ function Editor({ message: m, lead, onApproveNext }: { message: Message; lead: L
           <p className="small" style={{ color: 'var(--warn)' }}>
             送れなかった理由：{m.sendError}
           </p>
+        )}
+        {m.intro && (
+          <div>
+            <div className="section-title">エージェントが書いた部分（残りは固定の骨格と署名）</div>
+            <div className="bubble" style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>
+              {m.intro}
+            </div>
+          </div>
         )}
       </div>
     </div>

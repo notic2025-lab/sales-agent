@@ -117,7 +117,7 @@ function actions(set: SetState, get: GetState): Actions {
     skipMessage: (id, reason) => commit((s, now) => T.skipMessage(s, id, reason, now)),
     startDrafting: (campaignId) => commit((s, now) => T.startDrafting(s, campaignId, now)),
     updateMessage: (id, patch) => commit((s) => T.updateMessage(s, id, patch)),
-    setMessagesApproved: (ids, approved) => commit((s) => T.setMessagesApproved(s, ids, approved)),
+    setMessagesApproved: (ids, approved) => commit((s, now) => T.setMessagesApproved(s, ids, approved, now, by())),
     rewriteMessage: (id) => commit((s, now) => (BACKEND === 'demo' ? T.rewriteMessageNow(s, id) : T.requestRewrite(s, id, now))),
     scheduleSend: (campaignId, messageIds, runAt) => commit((s, now) => T.scheduleSend(s, campaignId, messageIds, runAt, now, by())),
     cancelSchedule: (campaignId) => commit((s, now) => T.cancelSchedule(s, campaignId, now)),
@@ -155,7 +155,9 @@ function actions(set: SetState, get: GetState): Actions {
         return
       }
       if (now - s.runner.lastPollAt < POLL_MS / s.settings.runnerSpeed) return
-      const due = s.jobs.filter((j) => j.status === 'queued' && j.runAt <= now).sort((a, b) => a.runAt - b.runAt)
+      const due = s.jobs
+        .filter((j) => j.status === 'queued' && j.runAt <= now && !(s.settings.sendingPaused && j.type === 'send-approved'))
+        .sort((a, b) => a.runAt - b.runAt)
       const next = due[0]
       if (!next) {
         set({ runner: { lastPollAt: now, lastPollFound: 0 } })

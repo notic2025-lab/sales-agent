@@ -1,9 +1,9 @@
 // 管理者の操作を「いまの DB → 変わる部分」の純粋な関数にしたもの。
 // デモはこの結果をそのまま localStorage に保存し、本番は変わった行だけを Firestore に書き込む。
 // 変わらない行は同じオブジェクトのまま返す（本番の差分書き込みが参照の一致で判定するため）。
-import type { Activity, Campaign, DB, LeadStatus, ReactionType, RejectReason, Sentiment, Settings } from '../types'
-import { composeMessage, newJob } from './agent'
-import { REJECT_REASON, isAutoList } from './leads'
+import type { Activity, Campaign, DB, LeadStatus, Message, ReactionType, RejectReason, Sentiment, Settings } from '../types'
+import { autoSchedule, composeMessage, newJob } from './agent'
+import { REJECT_REASON, isAutoList, isAutoSend } from './leads'
 import { uid } from '../lib/util'
 
 export type CampaignInput = Omit<Campaign, 'id' | 'createdAt'>
@@ -68,14 +68,19 @@ export function updateMessage(s: DB, id: string, patch: { subject?: string; body
   return { messages: s.messages.map((m) => (m.id === id ? { ...m, ...patch, edited: true } : m)) }
 }
 
-export function setMessagesApproved(s: DB, ids: string[], approved: boolean): Patch {
+export function setMessagesApproved(s: DB, ids: string[], approved: boolean, now = Date.now(), by?: string): Patch {
   const set_ = new Set(ids)
-  const to = approved ? 'approved' : 'draft'
-  return {
-    messages: s.messages.map((m) =>
-      set_.has(m.id) && (m.status === 'draft' || m.status === 'approved') && m.status !== to ? { ...m, status: to } : m,
-    ),
-  }
+  const to: Message['status'] = approved ? 'approved' : 'draft'
+  const messages: Message[] = s.messages.map((m) =>
+    set_.has(m.id) && (m.status === 'draft' || m.status === 'approved') && m.status !== to ? { ...m, status: to } : m,
+  )
+  if (!approved) return { messages }
+  // 承認なしで送る営業リストでは、人が要確認の文面を承認したらそのまま送信予約に入る
+  const first = s.messages.find((m) => set_.has(m.id))
+  const campaign = s.campaigns.find((c) => c.id === first?.campaignId)
+  if (!campaign || !isAutoSend(campaign)) return { messages }
+  const r = autoSchedule({ ...s, messages }, campaign, ids, now, by ?? 'admin')
+  return { ...r.patch, messages: r.patch.messages ?? messages }
 }
 
 // デモ：その場で別パターンの文面に差し替える

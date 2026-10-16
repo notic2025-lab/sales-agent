@@ -18,6 +18,7 @@ export const CHECK_RULES: { code: string; label: string; channels?: Channel[] }[
   { code: 'body', label: '本文' },
   { code: 'placeholder', label: '差し込み漏れ（〇〇・{{ }} など）' },
   { code: 'other-company', label: '別の企業名の混入' },
+  { code: 'hype', label: '言い過ぎ・断定（必ず・No.1・保証 など）' },
   { code: 'company', label: '宛先の会社名' },
   { code: 'law', label: '特定電子メール法の表示（送信者・住所・配信停止の案内）', channels: ['email'] },
 ]
@@ -37,6 +38,8 @@ export type CheckContext = {
 }
 
 const PLACEHOLDER = /\{\{|\}\}|〇〇|○○|◯◯|【(?:会社名|社名|企業名|氏名|担当者名|御社名)】|\[(?:会社名|社名|企業名|氏名|担当者名)\]/
+// 承認なしで送る前提なので、言い過ぎ・断定は機械的に止める
+export const HYPE = /必ず|絶対|100%|１００％|No\.?\s?1|ナンバーワン|業界最安|業界最高|日本一|世界一|確実に|保証(?:し|いた)/
 const OPT_OUT = /配信停止|受信拒否|配信を希望されない|ご案内が不要/
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -95,6 +98,8 @@ export function checkMessage(m: Message, ctx: CheckContext): Check[] {
   const other = ctx.otherLeads?.find((l) => l.id !== lead.id && l.company !== lead.company && m.body.includes(l.company))
   if (other) err('other-company', `別の企業名「${other.company}」が本文に入っています`)
   if (!m.body.includes(lead.company)) warn('company', `本文に宛先の会社名「${lead.company}」が見当たりません`)
+  const hype = (m.subject + '\n' + m.body).match(HYPE)
+  if (hype) err('hype', `言い過ぎ・断定の表現があります（「${hype[0]}」）`)
   if (m.channel === 'email') out.push(...complianceChecks(m.body, ctx.settings))
   if (m.channel !== 'sns' && m.body.length > 2000) warn('body', `本文が長めです（${m.body.length}文字）`)
   return out

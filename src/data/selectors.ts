@@ -1,6 +1,6 @@
 import type { DB, Job, Message } from '../types'
 import { fmtDate, fmtDateTime } from '../lib/util'
-import { isAutoList } from './leads'
+import { isAutoList, isAutoSend } from './leads'
 
 export const STEPS = [
   { label: 'リスト収集', actor: 'agent' },
@@ -49,7 +49,13 @@ export function stageOf(db: DB, campaignId: string): Stage {
   const send = live('send-approved')
   if (send?.status === 'running') return { step: 4, label: '送信中', tone: 'agent' }
   const drafts = msgs.filter((m) => m.status === 'draft' || m.status === 'approved')
-  if (drafts.length) {
+  const campaign = db.campaigns.find((c) => c.id === campaignId)
+  if (drafts.length && campaign && isAutoSend(campaign)) {
+    // 承認なしで送る営業リスト：自動チェックを通らなかった文面だけが残る。送信は止まらない
+    if (send) return { step: 4, label: '送信予約済み', tone: 'wait', detail: `${fmtDateTime(send.runAt)} ・ 要確認 ${drafts.length}件` }
+    if (!msgs.some((m) => ['scheduled', 'sending', 'sent', 'manual_pending', 'manual_done', 'bounced'].includes(m.status)))
+      return { step: 3, label: '要確認の文面があります', tone: 'admin', detail: `${drafts.length}件` }
+  } else if (drafts.length) {
     const ok = drafts.filter((m) => m.status === 'approved').length
     return { step: 3, label: '文面の承認待ち', tone: 'admin', detail: `${ok}/${drafts.length}件 承認済み` }
   }

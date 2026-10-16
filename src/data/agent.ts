@@ -15,8 +15,11 @@ import type {
 } from '../types'
 import type { Confidence } from '../types'
 import { HOUR, MIN, between, fmtDateTime, nextBusinessMorning, pick, shuffle, uid, type Rng } from '../lib/util'
-import { complianceFooter } from './checks'
-import { REJECT_REASON, isAutoList } from './leads'
+import { checkMessage, hasError } from './checks'
+import { assembleBody, defaultSubject } from './compose'
+import { REJECT_REASON, isAutoList, isAutoSend } from './leads'
+import { planSends } from './sendPlan'
+import { IS_DEMO } from './backend'
 
 export const INDUSTRIES = ['飲食', '小売', '不動産', 'クリニック', '製造', '宿泊・観光', '美容', '教育'] as const
 export const REGIONS = ['東京', '神奈川', '埼玉', '千葉', '大阪', '京都', '愛知', '福岡'] as const
@@ -272,46 +275,20 @@ export function composeMessage(
   lead: Lead,
   pattern: 'A' | 'B',
   insights: Insight[],
-): Pick<Message, 'subject' | 'body' | 'insightIds'> {
-  const s = db.settings
+): Pick<Message, 'subject' | 'body' | 'intro' | 'insightIds'> {
   const p = PROFILES[lead.industry] ?? PROFILES['小売']
   const pr = campaign.product
   const useNumber = insights.some((i) => i.key === 'subject-number')
   const count = numberOf(lead)
-  const strengths = pr.strengths
-    .split(/\n|、|。/)
-    .map((x) => x.trim())
-    .filter(Boolean)
-    .slice(0, 3)
-
-  let subject: string
-  if (pattern === 'A') {
-    subject = useNumber && count
-      ? `${count}の運営で、${pr.name}が役立つかもしれません`
-      : `${lead.company}様へ｜${pr.name}のご案内`
-  } else {
-    subject = useNumber && count
-      ? `【${lead.industry}の事例】${count}規模の企業さまでの${pr.name}の使われ方`
-      : `【${lead.industry}の事例】${pr.name}の導入事例のご紹介`
-  }
-
-  const opening = `${lead.company}\nご担当者様\n\n突然のご連絡失礼いたします。${s.senderCompany}の${s.senderName}と申します。`
-  const middle =
-    pattern === 'A'
-      ? `貴社サイトで${p.observe}を拝見し、ご連絡いたしました。\n${p.hook}`
-      : `${lead.industry}の企業さまで、${pr.name}をこのように使っていただいています。\n・${p.unit}ごとの担当者さまの作業が減った\n・本部で反応を数字で確かめられるようになった`
-  const product = `${pr.name}は、${pr.summary.replace(/。$/, '')}。${strengths.length ? `\n${strengths.map((x) => `・${x}`).join('\n')}` : ''}`
-  const close = `もしご関心がありましたら、15分ほどオンラインでご説明させてください。\nご都合のよい日時をお知らせいただけますと幸いです。${pr.url ? `\n\nサービス概要：${pr.url}` : ''}`
-
-  let body: string
-  if (lead.channel === 'sns') {
-    body = `${lead.company}ご担当者様\nはじめまして、${s.senderCompany}の${s.senderName}です。\n${p.hook}\n${pr.name}について、15分ほどご紹介の機会をいただけないでしょうか。${pr.url ? `\n${pr.url}` : ''}`
-  } else {
-    const footer = lead.channel === 'email' ? `\n\n${complianceFooter(s)}` : `\n\n――――――――――\n${s.signature}`
-    body = `${opening}\n\n${middle}\n\n${product}\n\n${close}${footer}`
-  }
-
-  return { subject, body, insightIds: insights.map((i) => i.id) }
+  const subject = lead.channel === 'sns' ? '' : defaultSubject(campaign, lead, pattern, useNumber ? count || undefined : undefined)
+  // デモ：エージェントが書く部分（相手企業に触れる数文）をテンプレートで代用する
+  const intro =
+    lead.channel === 'sns'
+      ? p.hook
+      : pattern === 'A'
+        ? `貴社サイトで${p.observe}を拝見し、ご連絡いたしました。\n${p.hook}`
+        : `${lead.industry}の企業さまで、${pr.name}をこのように使っていただいています。\n・${p.unit}ごとの担当者さまの作業が減った\n・本部で反応を数字で確かめられるようになった`
+  return { subject, body: assembleBody(db.settings, campaign, lead, lead.channel, intro), intro, insightIds: insights.map((i) => i.id) }
 }
 
 const REPLY_TEXT: Record<Sentiment, string[]> = {
@@ -629,9 +606,25 @@ export function applyJob(db: DB, job: Job, now: number): Partial<DB> {
     }
     case 'draft-messages': {
       const { messages } = job.payload as { messages: Message[] }
+      const saved = messages.map((m) => ({ ...m, createdAt: now }))
+      const next: DB = { ...db, messages: [...db.messages, ...saved] }
+      if (!campaign || !isAutoSend(campaign)) {
+        return {
+          messages: next.messages,
+          activities: [act(`「${campaign?.name}」の文面の下書き ${messages.length} 件を保存しました`), ...db.activities],
+        }
+      }
+      // 承認なしで送る営業リスト：自動チェックを通った文面はそのまま送信予約へ。通らないものは要確認として残す
+      const result = autoSchedule(next, campaign, saved.map((m) => m.id), now, 'agent')
+      const held = saved.length - result.scheduled
       return {
-        messages: [...db.messages, ...messages.map((m) => ({ ...m, createdAt: now }))],
-        activities: [act(`「${campaign?.name}」の文面の下書き ${messages.length} 件を保存しました`), ...db.activities],
+        ...result.patch,
+        activities: [
+          act(
+            `「${campaign.name}」の文面 ${saved.length} 件を作り、自動チェックを通った ${result.scheduled} 件を送信予約しました${held ? `（要確認 ${held} 件）` : ''}${result.firstAt ? `。送信 ${fmtDateTime(result.firstAt)}〜` : ''}`,
+          ),
+          ...db.activities,
+        ],
       }
     }
     case 'send-approved': {
@@ -718,3 +711,53 @@ export function newJob(type: JobType, campaignId: string, now: number, runAt = n
   }
 }
 
+
+// 自動チェックを通った文面を、送信ルール（時間帯・1日の上限・土日祝）に合わせて予約する。
+// 通らなかった文面は下書き（要確認）のまま残す。デモでは時間帯と上限を待たず、すぐ送る
+export function autoSchedule(
+  db: DB,
+  campaign: Campaign,
+  messageIds: string[],
+  now: number,
+  by: string,
+): { patch: Partial<DB>; scheduled: number; firstAt?: number } {
+  const want = new Set(messageIds)
+  const leads = db.leads.filter((l) => l.campaignId === campaign.id)
+  const leadById = new Map(leads.map((l) => [l.id, l]))
+  const earlier = db.messages
+    .filter((m) => m.campaignId === campaign.id && ['scheduled', 'sending', 'sent', 'bounced'].includes(m.status))
+    .map((m) => ({ message: m, lead: leadById.get(m.leadId) }))
+  const ok: Message[] = []
+  for (const m of db.messages) {
+    if (!want.has(m.id) || (m.status !== 'draft' && m.status !== 'approved')) continue
+    const checks = checkMessage(m, { settings: db.settings, lead: leadById.get(m.leadId), suppression: db.suppression, otherLeads: leads, earlier })
+    if (hasError(checks)) continue
+    ok.push(m)
+    earlier.push({ message: m, lead: leadById.get(m.leadId) })
+  }
+  if (!ok.length) return { patch: { messages: db.messages }, scheduled: 0 }
+  // 送る時刻：デモはすぐ。本番は次に送れる時刻から、1日の上限で日をまたいで割り当てる
+  const at = new Map<string, number>()
+  if (IS_DEMO) ok.forEach((m) => at.set(m.id, now))
+  else {
+    const auto = ok.filter((m) => m.channel !== 'sns')
+    const slots = planSends(db.settings, auto.length, now)
+    let i = 0
+    for (const slot of slots) for (let k = 0; k < slot.count && i < auto.length; k++, i++) at.set(auto[i].id, slot.at)
+    ok.filter((m) => m.channel === 'sns').forEach((m) => at.set(m.id, slots[0]?.at ?? now))
+  }
+  const firstAt = Math.min(...at.values())
+  const existing = db.jobs.find(
+    (j) => j.campaignId === campaign.id && j.type === 'send-approved' && j.status === 'queued' && (j.payload as { kind?: string } | undefined)?.kind !== 'reply',
+  )
+  return {
+    patch: {
+      messages: db.messages.map((m) => (at.has(m.id) ? { ...m, status: 'scheduled', scheduledAt: at.get(m.id), scheduledBy: by } : m)),
+      jobs: existing
+        ? db.jobs.map((j) => (j.id === existing.id ? { ...j, runAt: Math.min(j.runAt, firstAt) } : j))
+        : [...db.jobs, newJob('send-approved', campaign.id, now, firstAt, { kind: 'outreach' })],
+    },
+    scheduled: ok.length,
+    firstAt,
+  }
+}

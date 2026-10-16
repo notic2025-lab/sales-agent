@@ -96,6 +96,10 @@ service cloud.firestore {
     match /messages/{id} {
       allow read: if isMember();
       allow create: if isRunner() && incoming().status == 'draft';
+      function autoSendList() {
+        let c = get(/databases/$(database)/documents/campaigns/$(resource.data.campaignId)).data;
+        return !('sendApproval' in c) || c.sendApproval != 'manual';
+      }
       allow update: if (isAdmin() && adminMessageUpdate()) || (isRunner() && runnerMessageUpdate());
       allow delete: if false;
 
@@ -105,8 +109,8 @@ service cloud.firestore {
           (onlyChanges(['subject', 'body', 'edited']) && resource.data.status in ['draft', 'approved'])
           // 承認する・承認を取り消す（書き直しの依頼も下書きに戻す）・この企業には送らない
           || (onlyChanges(['status']) && (from('draft', 'approved') || from('approved', 'draft') || from('draft', 'skipped') || from('approved', 'skipped')))
-          // 送信前の最終確認をして予約する（確認した人を残す）
-          || (onlyChanges(['status', 'scheduledAt', 'scheduledBy']) && from('approved', 'scheduled')
+          // 送信前の最終確認をして予約する（確認した人を残す）。承認なしで送る営業リストでは要確認の文面を承認してそのまま予約できる
+          || (onlyChanges(['status', 'scheduledAt', 'scheduledBy']) && (from('approved', 'scheduled') || (from('draft', 'scheduled') && autoSendList()))
             && incoming().scheduledAt is int
             && incoming().scheduledBy == request.auth.token.email)
           // 送信が始まる前に予約を取り消す
@@ -120,7 +124,11 @@ service cloud.firestore {
       function runnerMessageUpdate() {
         return
           // 書き直し（下書きのままのものだけ）
-          (onlyChanges(['subject', 'body', 'pattern', 'insightIds', 'edited']) && from('draft', 'draft'))
+          (onlyChanges(['subject', 'body', 'intro', 'pattern', 'insightIds', 'edited']) && from('draft', 'draft'))
+          // 承認なしで送る営業リスト：自動チェックを通った下書きを送信予約に入れる（確認して送る営業リストでは不可）
+          || (onlyChanges(['status', 'scheduledAt', 'scheduledBy']) && from('draft', 'scheduled')
+            && autoSendList() && incoming().scheduledAt is int && incoming().scheduledBy == 'agent'
+            && leadSendable(resource.data.leadId))
           // 送信を始める：予約時刻を過ぎ、承認済みの企業で、配信停止リストにない
           || (onlyChanges(['status', 'runnerId']) && from('scheduled', 'sending')
             && resource.data.scheduledAt <= request.time.toMillis()

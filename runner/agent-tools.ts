@@ -10,9 +10,10 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { doc, setDoc, updateDoc, writeBatch, type Firestore } from 'firebase/firestore'
 import type { Campaign, Channel, Confidence, Insight, Job, JobType, Lead, Message, Reaction, RejectReason, Settings } from '../src/types.ts'
-import { checkMessage, checkReply, complianceFooter, emailDomain, hasError } from '../src/data/checks.ts'
-import { REJECT_REASON, isAutoList, normalizeDomain } from '../src/data/leads.ts'
-import { isOpen, jstDateKey, jstDayStart, nextOpen } from '../src/data/sendPlan.ts'
+import { checkMessage, checkReply, emailDomain, hasError } from '../src/data/checks.ts'
+import { INTRO_MAX, assembleBody, defaultSubject } from '../src/data/compose.ts'
+import { REJECT_REASON, isAutoList, isAutoSend, normalizeDomain } from '../src/data/leads.ts'
+import { isOpen, jstDateKey, jstDayStart, nextOpen, planSends } from '../src/data/sendPlan.ts'
 import { SEND_MODE, WORK_DIR, opt } from './lib/env.ts'
 import * as F from './lib/firebase.ts'
 import * as gmail from './lib/gmail.ts'
@@ -179,22 +180,26 @@ async function context(jobId?: string) {
       scoreReasons: l.scoreReasons,
       pages: l.pages,
     })
-    const footer = {
-      email: complianceFooter(settings),
-      form: `――――――――――\n${settings.signature}`,
-      sns: '（付けない）',
+    // ハイブリッド生成：骨格（名乗り・商材・締め・署名・法定表示）は道具が組む。エージェントが書くのは intro だけ
+    const sampleLead = { company: '（会社名）', industry: '（業種）' }
+    const skeleton = {
+      email: assembleBody(settings, campaign, sampleLead, 'email', '（ここにあなたが書く intro が入ります）'),
+      sns: assembleBody(settings, campaign, sampleLead, 'sns', '（ここにあなたが書く intro が入ります）'),
+      subjectExamples: { A: defaultSubject(campaign, sampleLead, 'A'), B: defaultSubject(campaign, sampleLead, 'B') },
+      introMaxChars: INTRO_MAX,
     }
+    const sendApproval = isAutoSend(campaign) ? 'auto' : 'manual'
     if (rewrite?.length) {
       const targets = rewrite.flatMap((r) => {
         const m = messages.find((x) => x.id === r.messageId && x.status === 'draft')
         const l = leads.find((x) => x.id === m?.leadId)
-        return m && l ? [{ messageId: m.id, pattern: r.pattern, current: { subject: m.subject, body: m.body }, ...leadInfo(l) }] : []
+        return m && l ? [{ messageId: m.id, pattern: r.pattern, current: { subject: m.subject, intro: m.intro ?? '' }, ...leadInfo(l) }] : []
       })
-      return print({ ...base, mode: 'rewrite', insights, footerAddedOnSave: footer, targets })
+      return print({ ...base, mode: 'rewrite', sendApproval, insights, skeleton, targets })
     }
     const has = new Set(messages.map((m) => m.leadId))
     const targets = leads.filter((l) => l.status === 'approved' && !has.has(l.id)).map(leadInfo)
-    return print({ ...base, mode: 'new', insights, footerAddedOnSave: footer, targets })
+    return print({ ...base, mode: 'new', sendApproval, insights, skeleton, targets })
   }
   if (job.type === 'send-approved') {
     const now = Date.now()
@@ -335,7 +340,7 @@ async function saveLeads(jobId: string | undefined, file: string | true | undefi
 // ──────────────────────────────────────────────
 // /draft-messages
 
-type DraftInput = { leadId?: string; messageId?: string; pattern?: 'A' | 'B'; subject?: string; body?: string; insightIds?: string[] }
+type DraftInput = { leadId?: string; messageId?: string; pattern?: 'A' | 'B'; subject?: string; intro?: string; insightIds?: string[] }
 
 async function saveDrafts(jobId: string | undefined, file: string | true | undefined) {
   const ctx = await open(jobId, ['draft-messages'])
@@ -347,62 +352,99 @@ async function saveDrafts(jobId: string | undefined, file: string | true | undef
   const messages = await F.messagesOf(db, campaign.id)
   const insightIds = new Set((await F.activeInsights(db)).map((i) => i.id))
   const rewrite = new Set(((job.payload as { rewrite?: { messageId: string }[] } | undefined)?.rewrite ?? []).map((r) => r.messageId))
-  const footer = (c: Channel) => (c === 'email' ? `\n\n${complianceFooter(settings)}` : c === 'form' ? `\n\n――――――――――\n${settings.signature}` : '')
+  const auto = isAutoSend(campaign)
+  const suppression = await F.listSuppression(db)
+  const allLeads = [...leads.values()]
   const skipped: { target?: string; reason: string }[] = []
-  let saved = 0
+  const written: Message[] = []
   const now = Date.now()
   for (const x of input) {
-    const subject = (x.subject ?? '').trim()
-    const body = (x.body ?? '').trim()
+    const intro = (x.intro ?? '').trim()
     const pattern = x.pattern === 'B' ? 'B' : 'A'
     const skip = (reason: string) => skipped.push({ target: x.leadId ?? x.messageId, reason })
-    if (!body) {
-      skip('本文がありません')
+    if (!intro) {
+      skip('intro（相手企業に触れる数文）がありません')
       continue
     }
-    if (PLACEHOLDER.test(subject) || PLACEHOLDER.test(body)) {
+    if (intro.length > INTRO_MAX) {
+      skip(`intro が長すぎます（${intro.length}文字。${INTRO_MAX}文字まで）`)
+      continue
+    }
+    if (PLACEHOLDER.test(intro) || PLACEHOLDER.test(x.subject ?? '')) {
       skip('差し込みが残っています。直してもう一度保存してください')
       continue
     }
     const ids = (x.insightIds ?? []).filter((i) => insightIds.has(i))
-    if (x.messageId) {
-      const m = messages.find((y) => y.id === x.messageId)
-      if (!m || !rewrite.has(m.id) || m.status !== 'draft') {
-        skip('書き直しの対象ではないか、下書きではありません')
-        continue
-      }
-      await updateDoc(doc(db, 'messages', m.id), { subject, body: body + footer(m.channel), pattern, insightIds: ids, edited: false })
-      saved++
+    const target = x.messageId ? messages.find((y) => y.id === x.messageId) : undefined
+    const lead = target ? leads.get(target.leadId) : x.leadId ? leads.get(x.leadId) : undefined
+    if (x.messageId && (!target || !rewrite.has(target.id) || target.status !== 'draft')) {
+      skip('書き直しの対象ではないか、下書きではありません')
       continue
     }
-    const lead = x.leadId ? leads.get(x.leadId) : undefined
     if (!lead || lead.status !== 'approved') {
       skip('承認された企業ではありません')
       continue
     }
-    if (messages.some((m) => m.leadId === lead.id)) {
+    if (!target && messages.some((m) => m.leadId === lead.id)) {
       skip('この企業の文面はすでにあります')
       continue
     }
-    const m: Message = {
-      id: F.newId(db, 'messages'),
-      campaignId: campaign.id,
-      leadId: lead.id,
-      channel: lead.channel,
-      pattern,
-      subject: lead.channel === 'sns' ? '' : subject,
-      body: body + footer(lead.channel),
-      insightIds: ids,
-      status: 'draft',
-      edited: false,
-      createdAt: now,
+    const channel = target?.channel ?? lead.channel
+    const subject = channel === 'sns' ? '' : (x.subject ?? '').trim().slice(0, 40) || defaultSubject(campaign, lead, pattern)
+    // 骨格は道具が組む。エージェントの文はこの intro だけ
+    const body = assembleBody(settings, campaign, lead, channel, intro)
+    const m: Message = target
+      ? { ...target, subject, body, intro, pattern, insightIds: ids, edited: false }
+      : { id: F.newId(db, 'messages'), campaignId: campaign.id, leadId: lead.id, channel, pattern, subject, body, intro, insightIds: ids, status: 'draft', edited: false, createdAt: now }
+    if (target) await updateDoc(doc(db, 'messages', m.id), { subject, body, intro, pattern, insightIds: ids, edited: false })
+    else {
+      await setDoc(doc(db, 'messages', m.id), m)
+      messages.push(m)
     }
-    await setDoc(doc(db, 'messages', m.id), m)
-    messages.push(m)
-    saved++
+    written.push(m)
   }
-  await F.addActivity(db, `「${campaign.name}」の文面の下書き ${saved} 件を保存しました（承認待ち）`, campaign.id)
-  print({ saved, skipped })
+  if (!auto) {
+    await F.addActivity(db, `「${campaign.name}」の文面の下書き ${written.length} 件を保存しました（承認待ち）`, campaign.id)
+    return print({ saved: written.length, skipped })
+  }
+  // 承認なしで送る営業リスト：自動チェックを通った文面はそのまま送信予約へ。通らないものは要確認として残す
+  const { holidays } = await loadHolidays()
+  const earlier = messages.filter((m) => ['scheduled', 'sending', 'sent', 'bounced'].includes(m.status)).map((m) => ({ message: m, lead: leads.get(m.leadId) }))
+  const ok: Message[] = []
+  const held: { company?: string; reasons: string[] }[] = []
+  for (const m of written) {
+    const checks = checkMessage(m, { settings, lead: leads.get(m.leadId), suppression, otherLeads: allLeads, earlier })
+    const errors = checks.filter((c) => c.level === 'error').map((c) => c.text)
+    if (errors.length) {
+      held.push({ company: leads.get(m.leadId)?.company, reasons: errors })
+      continue
+    }
+    ok.push(m)
+    earlier.push({ message: m, lead: leads.get(m.leadId) })
+  }
+  let firstAt: number | undefined
+  if (ok.length) {
+    const sentToday = (await F.sentSince(db, jstDayStart(now))).filter((m) => m.channel !== 'sns' && ['sending', 'sent', 'bounced'].includes(m.status)).length
+    const autoSend = ok.filter((m) => m.channel !== 'sns')
+    const slots = planSends(settings, autoSend.length, now, sentToday, holidays)
+    const at = new Map<string, number>()
+    let i = 0
+    for (const slot of slots) for (let k = 0; k < slot.count && i < autoSend.length; k++, i++) at.set(autoSend[i].id, slot.at)
+    for (const m of ok.filter((x) => x.channel === 'sns')) at.set(m.id, slots[0]?.at ?? nextOpen(settings, now, holidays))
+    firstAt = Math.min(...at.values())
+    for (const m of ok) await updateDoc(doc(db, 'messages', m.id), { status: 'scheduled', scheduledAt: at.get(m.id), scheduledBy: 'agent' })
+    const jobs = await F.queuedJobs(db)
+    const existing = jobs.find((j) => j.campaignId === campaign.id && j.type === 'send-approved' && kindOf(j) === 'outreach')
+    if (existing) {
+      if (existing.runAt > firstAt) await updateDoc(doc(db, 'jobs', existing.id), { runAt: firstAt })
+    } else await createJob(db, 'send-approved', campaign.id, firstAt, { kind: 'outreach' })
+  }
+  await F.addActivity(
+    db,
+    `「${campaign.name}」の文面 ${written.length} 件を作り、自動チェックを通った ${ok.length} 件を送信予約しました${held.length ? `（要確認 ${held.length} 件）` : ''}${firstAt ? `。送信 ${new Date(firstAt).toISOString()}〜` : ''}`,
+    campaign.id,
+  )
+  print({ saved: written.length, scheduled: ok.length, firstSendAt: firstAt ? new Date(firstAt).toISOString() : null, needsReview: held, skipped })
 }
 
 // ──────────────────────────────────────────────
@@ -412,6 +454,7 @@ type Gate = { blocked?: { reason: string; nextAt: number } }
 
 async function gate(db: Firestore, settings: Settings, holidays: Set<string>, countLimit: boolean): Promise<Gate> {
   const now = Date.now()
+  if (settings.sendingPaused) return { blocked: { reason: '設定で送信を一時停止しています', nextAt: now + 30 * 60_000 } }
   if (!isOpen(settings, now, holidays)) return { blocked: { reason: `送信の時間帯（${settings.sendWindow}${settings.skipWeekend ? '・土日祝を除く' : ''}）の外です`, nextAt: nextOpen(settings, now, holidays) } }
   if (!countLimit) return {}
   const today = (await F.sentSince(db, jstDayStart(now))).filter((m) => m.channel !== 'sns' && ['sending', 'sent', 'bounced'].includes(m.status)).length

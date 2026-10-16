@@ -24,6 +24,9 @@ export type Campaign = {
   // auto（既定）：確信度の高い企業はエージェントが承認し、すぐ文面作成へ。低いものは「要確認」として残る
   // manual：すべて人が承認する
   listApproval?: 'auto' | 'manual'
+  // auto（既定）：自動チェックを通った文面は承認なしで送信予約へ。通らないものは「要確認」として残る
+  // manual：文面を人が承認し、送信前の最終確認をしてから送る
+  sendApproval?: 'auto' | 'manual'
   createdAt: number
 }
 
@@ -79,6 +82,8 @@ export type Message = {
   pattern: 'A' | 'B'
   subject: string
   body: string
+  // エージェントが書いた部分（相手企業に触れる数文）。残りは固定の骨格と署名
+  intro?: string
   insightIds: string[]
   status: MessageStatus
   edited: boolean
@@ -173,6 +178,8 @@ export type Settings = {
   skipWeekend: boolean
   // 既存顧客のドメイン。収集の候補に入れない
   customerDomains?: string[]
+  // 送信を一時停止する（予約は残り、再開すると送られる）
+  sendingPaused?: boolean
   runnerPaused: boolean
   runnerSpeed: 1 | 2 | 4
 }

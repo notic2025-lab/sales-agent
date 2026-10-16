@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Ban, RotateCcw, Save } from 'lucide-react'
+import { Ban, Pause, Play, RotateCcw, Save } from 'lucide-react'
 import { useStore } from '../store'
 import { Switch, toast } from '../components/ui'
+import { cx } from '../lib/util'
 import { IS_DEMO } from '../data/backend'
 
 const WINDOWS = ['9:00〜18:00', '10:00〜17:00', '8:00〜20:00']
@@ -36,6 +37,26 @@ export default function Settings() {
             保存
           </button>
         </div>
+      </div>
+
+      <div className={cx('banner', settings.sendingPaused ? '' : 'green')} style={{ marginBottom: 18 }}>
+        <span className="ic">{settings.sendingPaused ? <Pause size={18} /> : <Play size={18} />}</span>
+        <div className="grow">
+          <b>{settings.sendingPaused ? '送信を一時停止しています' : '送信は動いています'}</b>
+          <span className="small">
+            {settings.sendingPaused ? '予約は残っています。再開すると送信ルールの範囲で送られます。' : '止めると、予約済みの文面も送られなくなります（再開するまで）。'}
+          </span>
+        </div>
+        <button
+          className={cx('btn', settings.sendingPaused && 'btn-primary')}
+          onClick={() => {
+            update({ sendingPaused: !settings.sendingPaused })
+            toast(settings.sendingPaused ? '送信を再開しました' : '送信を一時停止しました')
+          }}
+        >
+          {settings.sendingPaused ? <Play size={16} /> : <Pause size={16} />}
+          {settings.sendingPaused ? '送信を再開' : 'すべての送信を止める'}
+        </button>
       </div>
 
       <div className="card" style={{ marginBottom: 18 }}>
