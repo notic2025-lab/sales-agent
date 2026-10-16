@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom'
 import { AtSign, Bot, ChevronRight, CircleCheck, FilePenLine, ListChecks, MessageCircle, MessageSquareReply, Play, User } from 'lucide-react'
 import { useStore } from '../store'
-import { TASK_LABEL, type Task, type TaskKind } from '../data/selectors'
+import { TASK_LABEL, jobProgress, type Task, type TaskKind } from '../data/selectors'
+import { IS_DEMO } from '../data/backend'
 import { JOB_LABEL } from '../data/agent'
 import type { Activity, Job } from '../types'
 import { cx, fmtDateTime, relTime } from '../lib/util'
@@ -86,19 +87,19 @@ export function AgentNow({ compact }: { compact?: boolean }) {
   const name = (j: Job) => campaigns.find((c) => c.id === j.campaignId)?.name
 
   if (running) {
-    const p = Math.round(((running.logs.length - 1) / Math.max(1, running.plan.length)) * 100)
+    const p = jobProgress(running)
     return (
       <div className="stack" style={{ gap: 12 }}>
         <div className="row">
           <span className="live-dot busy" />
           <b>{JOB_LABEL[running.type]}</b>
           <span className="muted small" style={{ marginLeft: 'auto' }}>
-            {p}%
+            {p === null ? '実行中' : `${p}%`}
           </span>
         </div>
         <div className="muted small">{name(running)}</div>
-        <div className="progress">
-          <i style={{ width: `${p}%` }} />
+        <div className={cx('progress', p === null && 'indeterminate')}>
+          <i style={{ width: p === null ? undefined : `${p}%` }} />
         </div>
         <Terminal job={running} maxHeight={compact ? 190 : 260} follow />
       </div>
@@ -130,7 +131,7 @@ export function AgentNow({ compact }: { compact?: boolean }) {
                     runJobNow(j.id)
                     toast('ジョブを今すぐ実行するよう登録しました')
                   }}
-                  title="デモ用：予約時刻を待たずに実行します"
+                  title={IS_DEMO ? 'デモ用：予約時刻を待たずに実行します' : '予約時刻を待たずに、ランナーの次の確認で実行します'}
                 >
                   <Play size={14} />
                   今すぐ実行

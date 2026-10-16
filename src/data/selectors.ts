@@ -122,3 +122,9 @@ export function statsOf(db: DB, campaignId?: string) {
 }
 
 export const isSent = (m: Message) => SENT.includes(m.status)
+
+// デモは手順の数が分かるので％を出す。本番は手順の数が分からないので null（動いていることだけ見せる）
+export function jobProgress(job: Job): number | null {
+  if (!job.plan.length) return null
+  return Math.min(100, Math.round(((job.logs.length - 1) / job.plan.length) * 100))
+}

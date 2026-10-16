@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Inbox,
   LayoutDashboard,
+  LogOut,
   Megaphone,
   Menu,
   MessageSquareReply,
@@ -14,7 +15,8 @@ import {
   Terminal as TerminalIcon,
 } from 'lucide-react'
 import { useStore } from '../store'
-import { tasksOf } from '../data/selectors'
+import { jobProgress, tasksOf } from '../data/selectors'
+import { IS_DEMO } from '../data/backend'
 import { JOB_COMMAND, JOB_LABEL } from '../data/agent'
 import { cx, fmtDateTime } from '../lib/util'
 import { Toasts } from './ui'
@@ -70,7 +72,9 @@ function Sidebar({ open }: { open: boolean }) {
         <span className="workspace-avatar">N</span>
         <div>
           <b>NOTIC 営業部</b>
-          <small>デモ環境 ・ キャンペーン {campaigns.length}件</small>
+          <small>
+            {IS_DEMO ? 'デモ環境' : '本番'} ・ キャンペーン {campaigns.length}件
+          </small>
         </div>
       </div>
       <nav className="nav">
@@ -131,13 +135,17 @@ function RunnerCard() {
           <p>
             <span className="mono">{JOB_COMMAND[running.type]}</span> ・ {campaigns.find((c) => c.id === running.campaignId)?.name}
           </p>
-          <div className="progress" style={{ marginTop: 8 }}>
-            <i style={{ width: `${Math.round(((running.logs.length - 1) / Math.max(1, running.plan.length)) * 100)}%` }} />
+          <div className={cx('progress', jobProgress(running) === null && 'indeterminate')} style={{ marginTop: 8 }}>
+            <i style={{ width: jobProgress(running) === null ? undefined : `${jobProgress(running)}%` }} />
           </div>
         </>
       ) : (
         <p>
-          {paused ? '再開すると、未処理のジョブから順に実行します。' : '3秒ごとに未処理のジョブを確認しています。'}
+          {paused
+            ? '再開すると、未処理のジョブから順に実行します。'
+            : IS_DEMO
+              ? '3秒ごとに未処理のジョブを確認しています。'
+              : '社内のランナーが未処理のジョブを確認しています。'}
           {next && !paused && (
             <>
               <br />
@@ -174,9 +182,13 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
         ))}
       </nav>
       <span className="spacer" />
-      <span className="pill sm hide-sm" title="表示している企業・数値はすべて架空のデモデータです">
-        デモデータ（架空）
-      </span>
+      {IS_DEMO ? (
+        <span className="pill sm hide-sm" title="表示している企業・数値はすべて架空のデモデータです">
+          デモデータ（架空）
+        </span>
+      ) : (
+        <UserMenu />
+      )}
       {loc.pathname !== '/campaigns/new' && (
         <Link to="/campaigns/new" className="btn btn-primary">
           <Plus size={18} />
@@ -184,5 +196,18 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
         </Link>
       )}
     </header>
+  )
+}
+
+function UserMenu() {
+  const email = useStore((s) => s.session.email)
+  const signOut = useStore((s) => s.signOut)
+  return (
+    <span className="row hide-sm" style={{ gap: 6 }}>
+      <span className="muted small">{email}</span>
+      <button className="btn btn-ghost btn-icon btn-sm" onClick={signOut} aria-label="ログアウト" title="ログアウト">
+        <LogOut size={16} />
+      </button>
+    </span>
   )
 }

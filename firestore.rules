@@ -1,0 +1,202 @@
+rules_version = '2';
+
+// 営業エージェントの Firestore ルール
+//
+// 読み書きできるのは members/{uid} に登録された人だけ。
+//   role: 'admin'  … 管理サイトにログインする人
+//   role: 'runner' … 社内の Mac で動くランナー（ClaudeCode から呼ぶ runner/agent-tools.ts も含む）
+//
+// 「人の承認なしに企業へ連絡しない」をここで強制する。
+//   ・リストの承認、文面の承認・送信予約（送信前の最終確認）、返信の承認 … admin だけ
+//   ・送信（予約済み → 送信中 → 送信済み）… runner だけ。予約時刻を過ぎていて、
+//     リストで承認した企業で、配信停止リストに入っていない場合に限る
+//   ・承認・予約したあとの文面の書き換え … runner はできない
+// 1日の上限と送信の時間帯は runner/agent-tools.ts の送信ガードで守る（ルールでは件数を数えられないため）。
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function memberPath() {
+      return /databases/$(database)/documents/members/$(request.auth.uid);
+    }
+    function isAdmin() {
+      return signedIn() && exists(memberPath()) && get(memberPath()).data.role == 'admin';
+    }
+    function isRunner() {
+      return signedIn() && exists(memberPath()) && get(memberPath()).data.role == 'runner';
+    }
+    function isMember() {
+      return isAdmin() || isRunner();
+    }
+    function incoming() {
+      return request.resource.data;
+    }
+    function onlyChanges(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+    function from(before, after) {
+      return resource.data.status == before && request.resource.data.status == after;
+    }
+    function suppressed(key) {
+      return exists(/databases/$(database)/documents/suppression/$(key.lower()));
+    }
+    function leadSendable(leadId) {
+      let lead = get(/databases/$(database)/documents/leads/$(leadId)).data;
+      return lead.status == 'approved'
+        && !suppressed(lead.domain)
+        && (!('email' in lead) || lead.email == null
+          || (!suppressed(lead.email) && !suppressed(lead.email.split('@')[1])));
+    }
+
+    match /members/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false; // Firebase コンソールで登録する
+    }
+
+    match /settings/{id} {
+      allow read: if isMember();
+      allow write: if isAdmin() && id == 'main';
+    }
+
+    match /runners/{id} {
+      allow read: if isMember();
+      allow write: if isRunner();
+    }
+
+    match /campaigns/{id} {
+      allow read: if isMember();
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /leads/{id} {
+      allow read: if isMember();
+      // ランナーは「承認待ち」の企業だけを追加できる。配信停止リストの企業は追加できない
+      allow create: if isRunner()
+        && incoming().status == 'pending'
+        && !suppressed(incoming().domain);
+      // 承認・除外は人だけ
+      allow update: if isAdmin()
+        && onlyChanges(['status'])
+        && incoming().status in ['pending', 'approved', 'rejected'];
+      allow delete: if false;
+    }
+
+    match /messages/{id} {
+      allow read: if isMember();
+      allow create: if isRunner() && incoming().status == 'draft';
+      allow update: if (isAdmin() && adminMessageUpdate()) || (isRunner() && runnerMessageUpdate());
+      allow delete: if false;
+
+      function adminMessageUpdate() {
+        return
+          // 下書き・承認済みの文面を直す
+          (onlyChanges(['subject', 'body', 'edited']) && resource.data.status in ['draft', 'approved'])
+          // 承認する・承認を取り消す（書き直しの依頼も下書きに戻す）
+          || (onlyChanges(['status']) && (from('draft', 'approved') || from('approved', 'draft')))
+          // 送信前の最終確認をして予約する（確認した人を残す）
+          || (onlyChanges(['status', 'scheduledAt', 'scheduledBy']) && from('approved', 'scheduled')
+            && incoming().scheduledAt is int
+            && incoming().scheduledBy == request.auth.token.email)
+          // 送信が始まる前に予約を取り消す
+          || (onlyChanges(['status', 'scheduledAt', 'scheduledBy']) && from('scheduled', 'approved'))
+          // 予約を待たずに実行する（予約時刻を早める）
+          || (onlyChanges(['scheduledAt']) && resource.data.status == 'scheduled' && incoming().scheduledAt is int)
+          // SNS で手動送信した
+          || (onlyChanges(['status', 'sentAt']) && from('manual_pending', 'manual_done'));
+      }
+
+      function runnerMessageUpdate() {
+        return
+          // 書き直し（下書きのままのものだけ）
+          (onlyChanges(['subject', 'body', 'pattern', 'insightIds', 'edited']) && from('draft', 'draft'))
+          // 送信を始める：予約時刻を過ぎ、承認済みの企業で、配信停止リストにない
+          || (onlyChanges(['status', 'runnerId']) && from('scheduled', 'sending')
+            && resource.data.scheduledAt <= request.time.toMillis()
+            && leadSendable(resource.data.leadId))
+          // 送信できた
+          || (onlyChanges(['status', 'sentAt', 'messageId', 'threadId']) && from('sending', 'sent'))
+          // 送らずに戻す（時間帯外・上限・一時的なエラー）
+          || (onlyChanges(['status', 'sendError', 'runnerId']) && from('sending', 'scheduled'))
+          // 人の手に回す（SNS、CAPTCHA のあるフォームなど）
+          || (onlyChanges(['status', 'sendError']) && (from('scheduled', 'manual_pending') || from('sending', 'manual_pending')))
+          // 不達
+          || (onlyChanges(['status']) && from('sent', 'bounced'));
+      }
+    }
+
+    match /reactions/{id} {
+      allow read: if isMember();
+      // ランナーは Gmail で見つけた反応を記録する（返信の下書きは「下書き」のまま）。人は SNS の反応を手動で登録する
+      allow create: if (isRunner() && incoming().source == 'gmail'
+          && (!('replyDraft' in incoming()) || incoming().replyDraft.status == 'draft'))
+        || (isAdmin() && incoming().source == 'manual' && !('replyDraft' in incoming()));
+      allow update: if (isAdmin() && adminReactionUpdate()) || (isRunner() && runnerReactionUpdate());
+      allow delete: if false;
+
+      function draftBefore() {
+        return 'replyDraft' in resource.data && resource.data.replyDraft.status == 'draft';
+      }
+      function replyKeys(keys) {
+        return incoming().replyDraft.diff(resource.data.replyDraft).affectedKeys().hasOnly(keys);
+      }
+
+      function adminReactionUpdate() {
+        return onlyChanges(['replyDraft']) && draftBefore() && (
+          // 返信の下書きを直す
+          (incoming().replyDraft.status == 'draft' && replyKeys(['body']))
+          // 返信を確認して承認する
+          || (incoming().replyDraft.status == 'scheduled' && replyKeys(['body', 'status', 'approvedBy'])
+            && incoming().replyDraft.approvedBy == request.auth.token.email)
+        );
+      }
+
+      function runnerReactionUpdate() {
+        let prev = resource.data;
+        let next = incoming();
+        return
+          // 承認された返信を送る
+          (onlyChanges(['replyDraft']) && 'replyDraft' in prev && (
+            (prev.replyDraft.status == 'scheduled' && next.replyDraft.status == 'sending' && replyKeys(['status'])
+              && 'fromAddress' in prev && !suppressed(prev.fromAddress) && !suppressed(prev.fromAddress.split('@')[1]))
+            || (prev.replyDraft.status == 'sending' && next.replyDraft.status == 'sent' && replyKeys(['status', 'sentAt']))
+            || (prev.replyDraft.status == 'sending' && next.replyDraft.status == 'scheduled' && replyKeys(['status']))
+          ))
+          // 「無反応」と記録したあとに届いた返信で上書きする（返信の下書きは「下書き」のまま）
+          || (prev.type == 'no_response' && !('replyDraft' in prev)
+            && (!('replyDraft' in next) || next.replyDraft.status == 'draft'));
+      }
+    }
+
+    match /jobs/{id} {
+      allow read: if isMember();
+      allow create: if isMember() && incoming().status == 'queued';
+      // 人は順番待ちのジョブの実行時刻だけを変えられる。ランナーは実行状態とログを書く
+      allow update: if (isAdmin() && resource.data.status == 'queued' && onlyChanges(['runAt'])) || isRunner();
+      // 送信予約の取り消し（まだ始まっていないジョブだけ）
+      allow delete: if isAdmin() && resource.data.status == 'queued';
+    }
+
+    match /insights/{id} {
+      allow read: if isMember();
+      allow create: if isRunner();
+      allow update: if (isAdmin() && onlyChanges(['active'])) || isRunner();
+      allow delete: if false;
+    }
+
+    match /activities/{id} {
+      allow read: if isMember();
+      allow create: if (isAdmin() && incoming().actor == 'admin') || (isRunner() && incoming().actor == 'agent');
+      allow update, delete: if false;
+    }
+
+    match /suppression/{key} {
+      allow read: if isMember();
+      // 追加だけ。外すのは Firebase コンソールで（誤って再開しないように）
+      allow create: if isMember() && key == key.lower();
+      allow update, delete: if false;
+    }
+  }
+}

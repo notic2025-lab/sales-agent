@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "WebSearch",
+      "WebFetch",
+      "Edit(./runner/work/**)",
+      "Bash(node runner/agent-tools.ts *)",
+      "mcp__playwright"
+    ],
+    "deny": [
+      "Read(./runner/.env)",
+      "Read(./.env.local)",
+      "Edit(./src/**)",
+      "Edit(./runner/*.ts)",
+      "Edit(./runner/lib/**)",
+      "Edit(./.claude/**)",
+      "Edit(./firestore.rules)",
+      "Bash(git *)",
+      "Bash(npm *)",
+      "Bash(curl *)",
+      "Bash(rm *)"
+    ]
+  }
+}

@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarClock, Check, Copy, FilePenLine, Lightbulb, RotateCcw, Send, Undo2 } from 'lucide-react'
+import { CalendarClock, CalendarX, Check, Copy, FilePenLine, Lightbulb, RotateCcw, Send, ShieldCheck, Undo2 } from 'lucide-react'
 import { useStore } from '../../store'
 import type { Lead, Message, MessageStatus } from '../../types'
-import { CHANNEL_LABEL } from '../../data/agent'
-import { cx, fmtDateTime, nextBusinessMorning } from '../../lib/util'
-import { CHANNEL_ICON, ChannelLabel, CloseBtn, Empty, Modal, Pill, toast } from '../../components/ui'
+import { hasError } from '../../data/checks'
+import { IS_DEMO } from '../../data/backend'
+import { cx, fmtDateTime } from '../../lib/util'
+import { CHANNEL_ICON, ChannelLabel, Empty, Pill, toast } from '../../components/ui'
+import { CheckBadge, FinalReviewModal, MessageChecks, SendPreview, useCheckEnv } from '../../components/review'
 
 export const MSG_STATUS: Record<MessageStatus, { label: string; tone: string }> = {
   draft: { label: '確認待ち', tone: 'amber' },
   approved: { label: '承認済み', tone: 'accent' },
   scheduled: { label: '送信予約', tone: 'violet' },
+  sending: { label: '送信中', tone: 'accent' },
   sent: { label: '送信済み', tone: 'ok' },
   manual_pending: { label: '手動送信待ち', tone: 'amber' },
   manual_done: { label: '手動送信済み', tone: 'ok' },
@@ -24,13 +27,15 @@ const match = (m: Message, f: Filter) =>
   f === 'all' ||
   (f === 'todo' && m.status === 'draft') ||
   (f === 'approved' && m.status === 'approved') ||
-  (f === 'sent' && ['scheduled', 'sent', 'manual_done', 'bounced'].includes(m.status)) ||
+  (f === 'sent' && ['scheduled', 'sending', 'sent', 'manual_done', 'bounced'].includes(m.status)) ||
   (f === 'manual' && m.status === 'manual_pending')
 
 export function MessagesTab({ campaignId, initialFilter }: { campaignId: string; initialFilter?: string }) {
   const allMessages = useStore((s) => s.messages)
   const leads = useStore((s) => s.leads)
-  const setApproved = useStore((s) => s.setMessagesApproved)
+  const jobs = useStore((s) => s.jobs)
+  const cancelSchedule = useStore((s) => s.cancelSchedule)
+  const env = useCheckEnv(campaignId)
   const msgs = useMemo(() => allMessages.filter((m) => m.campaignId === campaignId), [allMessages, campaignId])
   const leadOf = (m: Message) => leads.find((l) => l.id === m.leadId)
 
@@ -41,7 +46,7 @@ export function MessagesTab({ campaignId, initialFilter }: { campaignId: string;
   })
   const shown = msgs.filter((m) => match(m, filter))
   const [activeId, setActiveId] = useState<string | undefined>(shown[0]?.id)
-  const [scheduling, setScheduling] = useState(false)
+  const [finalReview, setFinalReview] = useState(false)
   const active = msgs.find((m) => m.id === activeId) ?? shown[0]
 
   useEffect(() => {
@@ -51,6 +56,10 @@ export function MessagesTab({ campaignId, initialFilter }: { campaignId: string;
   const drafts = msgs.filter((m) => m.status === 'draft')
   const approved = msgs.filter((m) => m.status === 'approved')
   const reviewing = drafts.length + approved.length
+  const scheduled = msgs.filter((m) => m.status === 'scheduled')
+  const sendJob = jobs.find(
+    (j) => j.campaignId === campaignId && j.type === 'send-approved' && (j.payload as { kind?: string } | undefined)?.kind !== 'reply' && j.status !== 'done' && j.status !== 'failed',
+  )
 
   if (!msgs.length) {
     return (
@@ -63,7 +72,7 @@ export function MessagesTab({ campaignId, initialFilter }: { campaignId: string;
   }
 
   const approveAndNext = (m: Message) => {
-    setApproved([m.id], true)
+    useStore.getState().setMessagesApproved([m.id], true)
     const rest = shown.filter((x) => x.status === 'draft' && x.id !== m.id)
     const idx = shown.findIndex((x) => x.id === m.id)
     const next = rest.find((x) => shown.indexOf(x) > idx) ?? rest[0]
@@ -76,30 +85,46 @@ export function MessagesTab({ campaignId, initialFilter }: { campaignId: string;
       {reviewing > 0 && (
         <div className="banner blue" style={{ marginBottom: 14 }}>
           <span className="ic">
-            <CalendarClock size={18} />
+            <ShieldCheck size={18} />
           </span>
           <div className="grow">
             <b>
               承認済み {approved.length} / {reviewing}件
             </b>
+            <span className="small">1件ずつ開いて、届く内容と自動チェックを確かめてから承認してください。予約の前に、送信前の最終確認があります。</span>
             <div className="progress" style={{ marginTop: 6, maxWidth: 360, background: '#fff' }}>
               <i style={{ width: `${(approved.length / reviewing) * 100}%` }} />
             </div>
           </div>
+          <button className="btn btn-primary" disabled={!approved.length} onClick={() => setFinalReview(true)}>
+            <Send size={16} />
+            承認した{approved.length}件を最終確認して予約
+          </button>
+        </div>
+      )}
+
+      {scheduled.length > 0 && sendJob?.status === 'queued' && (
+        <div className="banner" style={{ marginBottom: 14, borderColor: 'var(--line)', background: 'var(--violet-soft)', color: 'var(--violet)' }}>
+          <span className="ic" style={{ borderColor: 'var(--line)' }}>
+            <CalendarClock size={18} />
+          </span>
+          <div className="grow">
+            <b>
+              {scheduled.length}件の送信を予約しています（{fmtDateTime(sendJob.runAt)}〜）
+            </b>
+            <span className="small">送信が始まるまでは取り消せます。取り消すと承認済みに戻ります。</span>
+          </div>
           <button
             className="btn"
-            disabled={!drafts.length}
             onClick={() => {
-              setApproved(drafts.map((m) => m.id), true)
-              toast(`${drafts.length}件をまとめて承認しました`)
+              if (window.confirm(`${scheduled.length}件の送信予約を取り消します。よろしいですか？`)) {
+                cancelSchedule(campaignId)
+                toast('送信予約を取り消しました')
+              }
             }}
           >
-            <Check size={16} />
-            残り{drafts.length}件をすべて承認
-          </button>
-          <button className="btn btn-primary" disabled={!approved.length} onClick={() => setScheduling(true)}>
-            <Send size={16} />
-            承認した{approved.length}件の送信を予約
+            <CalendarX size={16} />
+            予約を取り消す
           </button>
         </div>
       )}
@@ -139,9 +164,13 @@ export function MessagesTab({ campaignId, initialFilter }: { campaignId: string;
                   <b>{lead?.company}</b>
                   <small>{m.subject}</small>
                 </div>
-                <Pill tone={MSG_STATUS[m.status].tone} sm>
-                  {MSG_STATUS[m.status].label}
-                </Pill>
+                {m.status === 'draft' && hasError(env.check(m)) ? (
+                  <CheckBadge checks={env.check(m)} />
+                ) : (
+                  <Pill tone={MSG_STATUS[m.status].tone} sm>
+                    {MSG_STATUS[m.status].label}
+                  </Pill>
+                )}
               </div>
             )
           })}
@@ -153,7 +182,7 @@ export function MessagesTab({ campaignId, initialFilter }: { campaignId: string;
         )}
       </div>
 
-      {scheduling && <ScheduleModal campaignId={campaignId} approved={approved} onClose={() => setScheduling(false)} />}
+      {finalReview && <FinalReviewModal campaignId={campaignId} onClose={() => setFinalReview(false)} />}
     </>
   )
 }
@@ -165,11 +194,17 @@ function Editor({ message: m, lead, onApproveNext }: { message: Message; lead: L
   const markManualDone = useStore((s) => s.markManualDone)
   const insights = useStore((s) => s.insights)
   const settings = useStore((s) => s.settings)
+  const env = useCheckEnv(m.campaignId)
   const [subject, setSubject] = useState(m.subject)
   const [body, setBody] = useState(m.body)
+  const [ack, setAck] = useState(false)
   const editable = m.status === 'draft' || m.status === 'approved'
   const dirty = subject !== m.subject || body !== m.body
   const used = insights.filter((i) => m.insightIds.includes(i.id))
+  // 編集中の内容でチェックする（直したらすぐ結果が変わる）
+  const checks = env.check({ ...m, subject, body })
+  const blocked = hasError(checks)
+  const needsAck = !blocked && checks.length > 0
 
   useEffect(() => {
     setSubject(m.subject)
@@ -279,7 +314,11 @@ function Editor({ message: m, lead, onApproveNext }: { message: Message; lead: L
               className="btn"
               onClick={() => {
                 rewrite(m.id)
-                toast(`パターン${m.pattern === 'A' ? 'B' : 'A'}で書き直しました`)
+                toast(
+                  IS_DEMO
+                    ? `パターン${m.pattern === 'A' ? 'B' : 'A'}で書き直しました`
+                    : `パターン${m.pattern === 'A' ? 'B' : 'A'}での書き直しを依頼しました。ランナーが次の確認で作成します`,
+                )
               }}
             >
               <RotateCcw size={16} />
@@ -293,6 +332,8 @@ function Editor({ message: m, lead, onApproveNext }: { message: Message; lead: L
             ) : (
               <button
                 className="btn btn-primary"
+                disabled={blocked || (needsAck && !ack)}
+                title={blocked ? '自動チェックで送れない項目があります' : needsAck && !ack ? '注意点を確認したらチェックを入れてください' : undefined}
                 onClick={() => {
                   save()
                   onApproveNext(m)
@@ -304,141 +345,27 @@ function Editor({ message: m, lead, onApproveNext }: { message: Message; lead: L
             )}
           </div>
         )}
+        {editable && m.status === 'draft' && needsAck && (
+          <label className={cx('confirm', 'amber')}>
+            <input type="checkbox" className="check" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+            <span>
+              <b>注意点（{checks.length}件）を確認しました</b>
+              <small>右の自動チェックを読んだうえで、このまま送ってよい場合にチェックしてください。</small>
+            </span>
+          </label>
+        )}
       </div>
 
       <div className="preview-pane">
-        <div className="section-title">{m.channel === 'email' ? '受信者の画面' : m.channel === 'form' ? 'フォームに入力する内容' : 'SNSのメッセージ'}</div>
-        {m.channel === 'email' && (
-          <div className="mail-preview">
-            <div className="mhead">
-              <b>{subject}</b>
-              <span>
-                差出人：{settings.senderCompany} {settings.senderName} &lt;{settings.senderEmail}&gt;
-              </span>
-              <span>宛先：{lead.email}</span>
-            </div>
-            <div className="mbody">{body}</div>
-          </div>
-        )}
-        {m.channel === 'form' && (
-          <div className="form-preview">
-            <div className="muted mono" style={{ fontSize: 11 }}>
-              {lead.formUrl}
-            </div>
-            <div className="f">
-              <span>会社名</span>
-              <div>{settings.senderCompany}</div>
-            </div>
-            <div className="f">
-              <span>お名前</span>
-              <div>{settings.senderName}</div>
-            </div>
-            <div className="f">
-              <span>メールアドレス</span>
-              <div>{settings.senderEmail}</div>
-            </div>
-            <div className="f">
-              <span>件名</span>
-              <div>{subject}</div>
-            </div>
-            <div className="f">
-              <span>お問い合わせ内容</span>
-              <div className="long">{body}</div>
-            </div>
-          </div>
-        )}
-        {m.channel === 'sns' && (
-          <div className="phone">
-            <div className="muted small" style={{ textAlign: 'center', marginBottom: 10 }}>
-              {lead.sns}
-            </div>
-            <div className="dm">{body}</div>
-          </div>
+        <div className="section-title">{m.channel === 'email' ? '相手に届くメール' : m.channel === 'form' ? 'フォームに入力する内容' : 'SNSのメッセージ（あなたが手動で送ります）'}</div>
+        <SendPreview channel={m.channel} lead={lead} settings={settings} subject={subject} body={body} />
+        {(editable || m.status === 'scheduled') && <MessageChecks checks={checks} channel={m.channel} />}
+        {m.sendError && (
+          <p className="small" style={{ color: 'var(--warn)' }}>
+            送れなかった理由：{m.sendError}
+          </p>
         )}
       </div>
     </div>
-  )
-}
-
-function ScheduleModal({ campaignId, approved, onClose }: { campaignId: string; approved: Message[]; onClose: () => void }) {
-  const schedule = useStore((s) => s.scheduleSend)
-  const settings = useStore((s) => s.settings)
-  const morning = nextBusinessMorning()
-  const [when, setWhen] = useState<'now' | 'morning' | 'custom'>('now')
-  const [custom, setCustom] = useState(() => {
-    const d = new Date(morning)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T09:00`
-  })
-  const auto = approved.filter((m) => m.channel !== 'sns').length
-  const manual = approved.length - auto
-  const runAt = when === 'now' ? Date.now() : when === 'morning' ? morning : new Date(custom).getTime()
-  const valid = !Number.isNaN(runAt)
-
-  return (
-    <Modal onClose={onClose}>
-      <div className="drawer-head">
-        <div className="grow">
-          <h2>送信を予約</h2>
-          <p className="muted small">予約した時刻にランナーが /send-approved を実行します。</p>
-        </div>
-        <CloseBtn onClick={onClose} />
-      </div>
-      <div className="drawer-body">
-        <div className="stack" style={{ gap: 8 }}>
-          {(
-            [
-              ['now', '今すぐ送信', 'ランナーが次の確認で拾います（デモでは数秒後）'],
-              ['morning', `${fmtDateTime(morning)}`, '次の営業日の朝。開封されやすい時間帯です'],
-              ['custom', '日時を指定', ''],
-            ] as const
-          ).map(([k, label, sub]) => (
-            <button key={k} type="button" className={cx('choice', when === k && 'on')} onClick={() => setWhen(k)}>
-              <span className="ic">
-                <CalendarClock size={17} />
-              </span>
-              <span style={{ flex: 1 }}>
-                <b>{label}</b>
-                {sub && <small>{sub}</small>}
-                {k === 'custom' && when === 'custom' && (
-                  <input type="datetime-local" className="input" style={{ marginTop: 8 }} value={custom} onChange={(e) => setCustom(e.target.value)} onClick={(e) => e.stopPropagation()} />
-                )}
-              </span>
-            </button>
-          ))}
-        </div>
-        <dl className="kv">
-          <dt>自動で送信</dt>
-          <dd>
-            <b>{auto}件</b>（{CHANNEL_LABEL.email}・{CHANNEL_LABEL.form}）
-          </dd>
-          <dt>手動送信待ちへ</dt>
-          <dd>
-            <b>{manual}件</b>（SNS）
-          </dd>
-          <dt>送信ルール</dt>
-          <dd>
-            1日{settings.dailyLimit}件まで ・ {settings.sendWindow}
-            {settings.skipWeekend ? ' ・ 土日は送らない' : ''}
-          </dd>
-        </dl>
-      </div>
-      <div className="drawer-foot">
-        <button className="btn" onClick={onClose}>
-          キャンセル
-        </button>
-        <button
-          className="btn btn-primary"
-          disabled={!valid}
-          onClick={() => {
-            schedule(campaignId, runAt)
-            toast(`${approved.length}件の送信を予約しました`)
-            onClose()
-          }}
-        >
-          <Send size={16} />
-          {approved.length}件の送信を予約
-        </button>
-      </div>
-    </Modal>
   )
 }

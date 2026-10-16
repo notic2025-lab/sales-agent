@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
 import { HashRouter, Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
-import { startRunner } from './store'
+import { startBackend, useStore } from './store'
+import AuthGate from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Inbox from './pages/Inbox'
 import Campaigns from './pages/Campaigns'
@@ -13,7 +14,10 @@ import Runner from './pages/Runner'
 import Settings from './pages/Settings'
 
 export default function App() {
-  useEffect(() => startRunner(), [])
+  useEffect(() => startBackend(), [])
+  const status = useStore((s) => s.session.status)
+  // 本番はログインして members に管理者として登録されている人だけが使える
+  if (status !== 'demo' && status !== 'ready') return <AuthGate />
   return (
     <HashRouter>
       <Layout>

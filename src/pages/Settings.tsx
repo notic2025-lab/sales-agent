@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Ban, Bot, Database, Mail, RotateCcw, Save } from 'lucide-react'
 import { useStore } from '../store'
 import { Pill, Switch, toast } from '../components/ui'
+import { IS_DEMO } from '../data/backend'
 
 const WINDOWS = ['9:00〜18:00', '10:00〜17:00', '8:00〜20:00']
 
@@ -55,6 +56,17 @@ export default function Settings() {
             <div className="field">
               <label htmlFor="se">送信に使うメールアドレス</label>
               <input id="se" className="input" value={form.senderEmail} onChange={(e) => setForm({ ...form, senderEmail: e.target.value })} />
+            </div>
+            <div className="field">
+              <label htmlFor="sa">住所</label>
+              <input
+                id="sa"
+                className="input"
+                value={form.senderAddress ?? ''}
+                placeholder="例：東京都千代田区丸の内1-1-1"
+                onChange={(e) => setForm({ ...form, senderAddress: e.target.value })}
+              />
+              <span className="muted small">メールの末尾に入れます。空のままだとメールを送れません。</span>
             </div>
             <div className="field">
               <label htmlFor="sig">署名</label>
@@ -123,9 +135,9 @@ export default function Settings() {
           </div>
           <div className="card-body stack" style={{ gap: 14 }}>
             {[
-              { icon: Mail, name: 'Gmail', sub: '送信と、返信・配信停止・不達のチェックに使います', state: 'デモ（未接続）' },
-              { icon: Bot, name: 'ランナー / ClaudeCode', sub: 'claude -p でスラッシュコマンドを実行します', state: 'ブラウザ内で再現' },
-              { icon: Database, name: 'DB', sub: 'ジョブ・企業・文面・送信ログ・反応を保存します', state: 'このブラウザに保存' },
+              { icon: Mail, name: 'Gmail', sub: '送信と、返信・配信停止・不達のチェックに使います', state: IS_DEMO ? 'デモ（未接続）' : 'ランナーの Mac で接続' },
+              { icon: Bot, name: 'ランナー / ClaudeCode', sub: 'claude -p でスラッシュコマンドを実行します', state: IS_DEMO ? 'ブラウザ内で再現' : '社内の Mac（launchd）' },
+              { icon: Database, name: 'DB', sub: 'ジョブ・企業・文面・送信ログ・反応を保存します', state: IS_DEMO ? 'このブラウザに保存' : 'Firestore' },
             ].map((c) => (
               <div className="row" key={c.name} style={{ alignItems: 'flex-start' }}>
                 <span className="ch">
@@ -140,6 +152,7 @@ export default function Settings() {
                 <Pill sm>{c.state}</Pill>
               </div>
             ))}
+            {IS_DEMO && (
             <div style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 14 }} className="row wrap">
               <div style={{ flex: 1, minWidth: 200 }}>
                 <b>デモデータを最初の状態に戻す</b>
@@ -159,6 +172,7 @@ export default function Settings() {
                 リセット
               </button>
             </div>
+            )}
           </div>
         </section>
       </div>

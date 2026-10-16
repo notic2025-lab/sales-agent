@@ -14,6 +14,7 @@ import type {
   Sentiment,
 } from '../types'
 import { HOUR, MIN, between, fmtDateTime, nextBusinessMorning, pick, shuffle, uid, type Rng } from '../lib/util'
+import { complianceFooter } from './checks'
 
 export const INDUSTRIES = ['飲食', '小売', '不動産', 'クリニック', '製造', '宿泊・観光', '美容', '教育'] as const
 export const REGIONS = ['東京', '神奈川', '埼玉', '千葉', '大阪', '京都', '愛知', '福岡'] as const
@@ -231,6 +232,7 @@ function makeLead(rng: Rng, campaign: Campaign, used: Set<string>, now: number):
     employees,
     summary: pick(rng, p.summaries)(region, n),
     email: hasEmail ? `${pick(rng, ['info', 'contact', 'sales', 'pr'])}@${domain}` : undefined,
+    emailSource: hasEmail ? `https://${domain}/company` : undefined,
     formUrl: hasForm ? `https://${domain}/contact` : undefined,
     sns: hasSns ? `${pick(rng, SNS_HANDLES)}${stem[1]}_${suffix[1]}` : undefined,
     channel,
@@ -288,10 +290,7 @@ export function composeMessage(
   if (lead.channel === 'sns') {
     body = `${lead.company}ご担当者様\nはじめまして、${s.senderCompany}の${s.senderName}です。\n${p.hook}\n${pr.name}について、15分ほどご紹介の機会をいただけないでしょうか。${pr.url ? `\n${pr.url}` : ''}`
   } else {
-    const footer =
-      lead.channel === 'email'
-        ? `\n\n――――――――――\n${s.signature}\n\n今後このようなご案内が不要な場合は、お手数ですが本メールに「配信停止」とご返信ください。`
-        : `\n\n――――――――――\n${s.signature}`
+    const footer = lead.channel === 'email' ? `\n\n${complianceFooter(s)}` : `\n\n――――――――――\n${s.signature}`
     body = `${opening}\n\n${middle}\n\n${product}\n\n${close}${footer}`
   }
 
@@ -433,7 +432,8 @@ function planSend(db: DB, campaign: Campaign, job: Job, now: number): Planned {
     ]
     return { plan, payload: { kind: 'reply', reactionIds: rs.map((r) => r.id) }, summary: `返信${rs.length}件を送信` }
   }
-  const msgs = db.messages.filter((m) => m.campaignId === campaign.id && m.status === 'scheduled')
+  // 予約時刻になった文面だけを送る（あとの時刻に予約した分は次のジョブに回す）
+  const msgs = db.messages.filter((m) => m.campaignId === campaign.id && m.status === 'scheduled' && (m.scheduledAt ?? 0) <= now)
   const email = msgs.filter((m) => m.channel === 'email')
   const form = msgs.filter((m) => m.channel === 'form')
   const sns = msgs.filter((m) => m.channel === 'sns')
@@ -478,7 +478,7 @@ function planEvaluate(db: DB, campaign: Campaign, rng: Rng, now: number): Planne
       continue
     }
     if (r < 0.1) {
-      reactions.push({ ...base, type: 'unsubscribe', excerpt: pick(rng, UNSUB_TEXT), receivedAt: at })
+      reactions.push({ ...base, type: 'unsubscribe', fromAddress: lead.email ?? `contact@${lead.domain}`, excerpt: pick(rng, UNSUB_TEXT), receivedAt: at })
       continue
     }
     let p = 0.01 + Math.max(0, (lead.score - 40) / 60) * 0.19
@@ -491,6 +491,7 @@ function planEvaluate(db: DB, campaign: Campaign, rng: Rng, now: number): Planne
       reactions.push({
         ...base,
         type: 'reply',
+        fromAddress: lead.email ?? `contact@${lead.domain}`,
         sentiment,
         excerpt: pick(rng, REPLY_TEXT[sentiment]),
         receivedAt: at,
@@ -609,6 +610,12 @@ export function applyJob(db: DB, job: Job, now: number): Partial<DB> {
       const jobs = [...db.jobs]
       const hasEval = jobs.some((j) => j.campaignId === job.campaignId && j.type === 'evaluate' && j.status === 'queued')
       if (send.size && !hasEval) jobs.push(newJob('evaluate', job.campaignId, now, p.evalAt))
+      const later = messages.filter((m) => m.campaignId === job.campaignId && m.status === 'scheduled')
+      const hasSend = jobs.some((j) => j.campaignId === job.campaignId && j.type === 'send-approved' && j.status === 'queued')
+      if (later.length && !hasSend) {
+        const at = Math.min(...later.map((m) => m.scheduledAt ?? now))
+        jobs.push(newJob('send-approved', job.campaignId, now, at, { kind: 'outreach' }))
+      }
       return {
         messages,
         jobs,
@@ -647,13 +654,15 @@ function makeMessageId(m: Message, now: number) {
   return `<${now.toString(36)}.${m.id.slice(-6)}@mail.gmail.com>`
 }
 
+// ランナーはジョブ ID を渡してスラッシュコマンドを実行する（キャンペーンや送信対象はジョブから引く）
 export function newJob(type: JobType, campaignId: string, now: number, runAt = now, payload?: unknown): Job {
+  const id = uid('job')
   return {
-    id: uid('job'),
+    id,
     type,
     campaignId,
     status: 'queued',
-    command: `claude -p "${JOB_COMMAND[type]} ${campaignId}"`,
+    command: `claude -p "${JOB_COMMAND[type]} ${id}"`,
     createdAt: now,
     runAt,
     plan: [],

@@ -4,6 +4,7 @@ import { useStore } from '../store'
 import { stageOf, statsOf } from '../data/selectors'
 import { CHANNEL_LABEL, JOB_LABEL } from '../data/agent'
 import { fmtDateTime, pct } from '../lib/util'
+import { IS_DEMO } from '../data/backend'
 import { ChannelLabel, Empty, Pill, StagePill, Stepper, Terminal, toast } from '../components/ui'
 import { ReactionTable, ReplyApproveAll } from '../components/reactions'
 import { LeadsTab } from './campaign/LeadsTab'
@@ -16,6 +17,7 @@ export default function CampaignDetail() {
   const [params, setParams] = useSearchParams()
   const db = useStore()
   const runJobNow = useStore((s) => s.runJobNow)
+  const cancelSchedule = useStore((s) => s.cancelSchedule)
   const campaign = db.campaigns.find((c) => c.id === id)
 
   if (!campaign) {
@@ -37,7 +39,7 @@ export default function CampaignDetail() {
   const jobs = db.jobs.filter((j) => j.campaignId === id)
   const running = jobs.find((j) => j.status === 'running')
   const queued = jobs.filter((j) => j.status === 'queued').sort((a, b) => a.runAt - b.runAt)[0]
-  const sentLog = msgs.filter((m) => ['scheduled', 'sent', 'manual_pending', 'manual_done', 'bounced'].includes(m.status))
+  const sentLog = msgs.filter((m) => ['scheduled', 'sending', 'sent', 'manual_pending', 'manual_done', 'bounced'].includes(m.status))
   const replyDrafts = reactions.filter((r) => r.replyDraft?.status === 'draft')
 
   const defaultTab: Tab = st.step <= 1 ? 'leads' : st.step <= 3 ? 'messages' : st.step === 4 ? 'log' : 'reactions'
@@ -135,16 +137,29 @@ export default function CampaignDetail() {
                 </b>
                 <span className="small">ランナーが予約時刻に ClaudeCode を起動します。</span>
               </div>
+              {queued.type === 'send-approved' && msgs.some((m) => m.status === 'scheduled') && (
+                <button
+                  className="btn"
+                  onClick={() => {
+                    if (window.confirm('送信予約を取り消して、文面を承認済みに戻します。よろしいですか？')) {
+                      cancelSchedule(id)
+                      toast('送信予約を取り消しました')
+                    }
+                  }}
+                >
+                  予約を取り消す
+                </button>
+              )}
               {queued.runAt > Date.now() && (
                 <button
                   className="btn"
                   onClick={() => {
                     runJobNow(queued.id)
-                    toast('予約を待たずに実行します（デモ）')
+                    toast(IS_DEMO ? '予約を待たずに実行します（デモ）' : '予約を待たずに、ランナーの次の確認で実行します')
                   }}
                 >
                   <Play size={15} />
-                  今すぐ実行（デモ）
+                  {IS_DEMO ? '今すぐ実行（デモ）' : '今すぐ実行'}
                 </button>
               )}
             </div>

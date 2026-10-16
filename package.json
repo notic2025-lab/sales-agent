@@ -7,9 +7,13 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "typecheck:runner": "tsc -p tsconfig.runner.json",
+    "runner": "node runner/index.ts",
+    "runner:once": "node runner/index.ts --once",
     "preview": "vite preview"
   },
   "dependencies": {
+    "firebase": "^12.19.0",
     "lucide-react": "^1.58.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -17,6 +21,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@playwright/mcp": "^0.0.83",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",

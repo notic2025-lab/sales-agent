@@ -4,6 +4,7 @@ import { ChevronRight, Info, X } from 'lucide-react'
 import { useStore } from '../store'
 import { stageOf, statsOf, tasksOf } from '../data/selectors'
 import { DAY, num, pct, ratio } from '../lib/util'
+import { IS_DEMO } from '../data/backend'
 import { MiniSteps, Sparkline, StagePill } from '../components/ui'
 import { ActivityFeed, AgentNow, TaskList } from '../components/shared'
 
@@ -51,7 +52,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <DemoNote />
+      {IS_DEMO && <DemoNote />}
 
       <div className="grid g-4" style={{ marginBottom: 18 }}>
         <div className="card kpi">

@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { create } from 'zustand'
-import { AtSign, Bot, CircleCheck, Mail, PanelTop, User, X } from 'lucide-react'
+import { AtSign, Bot, CircleAlert, CircleCheck, Mail, PanelTop, User, X } from 'lucide-react'
 import type { Channel, Job, Lead } from '../types'
 import { STEPS, type Stage } from '../data/selectors'
 import { CHANNEL_LABEL } from '../data/agent'
@@ -145,12 +145,12 @@ export function Drawer({ onClose, children }: { onClose: () => void; children: R
   )
 }
 
-export function Modal({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+export function Modal({ onClose, children, wide, label }: { onClose: () => void; children: ReactNode; wide?: boolean; label?: string }) {
   useEscape(onClose)
   return (
     <>
       <div className="overlay" onClick={onClose} />
-      <div className="modal" role="dialog" aria-modal="true">
+      <div className={cx('modal', wide && 'wide')} role="dialog" aria-modal="true" aria-label={label}>
         {children}
       </div>
     </>
@@ -206,25 +206,26 @@ export function Terminal({ job, maxHeight, follow }: { job: Job; maxHeight?: num
   )
 }
 
-type ToastState = { items: { id: number; text: string }[]; push: (text: string) => void }
+type ToastTone = 'ok' | 'error'
+type ToastState = { items: { id: number; text: string; tone: ToastTone }[]; push: (text: string, tone: ToastTone) => void }
 const useToasts = create<ToastState>((set) => ({
   items: [],
-  push: (text) => {
+  push: (text, tone) => {
     const id = Date.now() + Math.random()
-    set((s) => ({ items: [...s.items, { id, text }] }))
-    window.setTimeout(() => set((s) => ({ items: s.items.filter((t) => t.id !== id) })), 3200)
+    set((s) => ({ items: [...s.items, { id, text, tone }] }))
+    window.setTimeout(() => set((s) => ({ items: s.items.filter((t) => t.id !== id) })), tone === 'error' ? 6000 : 3200)
   },
 }))
 
-export const toast = (text: string) => useToasts.getState().push(text)
+export const toast = (text: string, tone: ToastTone = 'ok') => useToasts.getState().push(text, tone)
 
 export function Toasts() {
   const items = useToasts((s) => s.items)
   return (
     <div className="toasts" aria-live="polite">
       {items.map((t) => (
-        <div key={t.id} className="toast">
-          <CircleCheck size={18} />
+        <div key={t.id} className={cx('toast', t.tone === 'error' && 'error')} role={t.tone === 'error' ? 'alert' : undefined}>
+          {t.tone === 'error' ? <CircleAlert size={18} /> : <CircleCheck size={18} />}
           {t.text}
         </div>
       ))}

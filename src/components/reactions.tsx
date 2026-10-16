@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { AtSign, Check, Inbox, MessageSquareReply, Send } from 'lucide-react'
 import { useStore } from '../store'
 import type { Reaction, ReactionType, Sentiment } from '../types'
+import { REPLY_RULES, checkReply, hasError } from '../data/checks'
 import { cx, fmtDateTime, relTime } from '../lib/util'
 import { ChannelLabel, CloseBtn, Drawer, Empty, Modal, Pill, toast } from './ui'
+import { CheckBadge, CheckList, ReplyReviewModal } from './review'
 
 export const SENTIMENT: Record<Sentiment, { label: string; tone: string }> = {
   positive: { label: '前向き', tone: 'ok' },
@@ -113,11 +115,15 @@ export function ReactionDrawer({ reaction: r, onClose }: { reaction: Reaction; o
   const lead = useStore((s) => s.leads.find((l) => l.id === r.leadId))
   const msg = useStore((s) => s.messages.find((m) => m.id === r.messageId))
   const settings = useStore((s) => s.settings)
+  const suppression = useStore((s) => s.suppression)
   const updateReply = useStore((s) => s.updateReplyDraft)
   const approve = useStore((s) => s.approveReplies)
   const [body, setBody] = useState(r.replyDraft?.body ?? '')
   const [expanded, setExpanded] = useState(false)
+  const [read, setRead] = useState(false)
   const draft = r.replyDraft?.status === 'draft'
+  const to = r.fromAddress ?? lead?.email
+  const checks = checkReply(body, to, settings, suppression)
 
   return (
     <Drawer onClose={onClose}>
@@ -168,8 +174,20 @@ export function ReactionDrawer({ reaction: r, onClose }: { reaction: Reaction; o
           <div>
             <div className="section-title row" style={{ justifyContent: 'space-between' }}>
               <span>エージェントが作成した返信</span>
-              {!draft && <Pill tone={r.replyDraft.status === 'sent' ? 'ok' : 'violet'} sm>{r.replyDraft.status === 'sent' ? '返信済み' : '送信予約'}</Pill>}
+              {!draft && <Pill tone={r.replyDraft.status === 'sent' ? 'ok' : 'violet'} sm>{r.replyDraft.status === 'sent' ? '返信済み' : r.replyDraft.status === 'sending' ? '送信中' : '送信予約'}</Pill>}
             </div>
+            <dl className="kv" style={{ marginBottom: 10 }}>
+              <dt>宛先</dt>
+              <dd className="mono">{to ?? '（なし）'}</dd>
+              <dt>件名</dt>
+              <dd>Re: {msg?.subject}</dd>
+              {r.replyDraft.approvedBy && (
+                <>
+                  <dt>承認した人</dt>
+                  <dd>{r.replyDraft.approvedBy}</dd>
+                </>
+              )}
+            </dl>
             {draft ? (
               <textarea className="textarea" style={{ minHeight: 280, fontSize: 13.5, lineHeight: 1.8 }} value={body} onChange={(e) => setBody(e.target.value)} onBlur={() => updateReply(r.id, body)} />
             ) : (
@@ -177,14 +195,26 @@ export function ReactionDrawer({ reaction: r, onClose }: { reaction: Reaction; o
             )}
           </div>
         )}
+        {draft && (
+          <div>
+            <div className="section-title row" style={{ justifyContent: 'space-between' }}>
+              <span>送信前の自動チェック</span>
+              <CheckBadge checks={checks} />
+            </div>
+            <CheckList checks={checks} rules={REPLY_RULES} />
+          </div>
+        )}
       </div>
       {draft && (
         <div className="drawer-foot">
-          <span className="muted small" style={{ marginRight: 'auto', alignSelf: 'center' }}>
-            承認すると Gmail から返信します
-          </span>
+          <label className="row small" style={{ marginRight: 'auto', gap: 8, cursor: 'pointer' }}>
+            <input type="checkbox" className="check" checked={read} disabled={hasError(checks)} onChange={(e) => setRead(e.target.checked)} />
+            宛先と本文を確認しました
+          </label>
           <button
             className="btn btn-primary"
+            disabled={!read || hasError(checks)}
+            title="承認すると Gmail から返信します"
             onClick={() => {
               updateReply(r.id, body)
               approve([r.id])
@@ -297,19 +327,17 @@ export function ManualReactionModal({ campaignId, onClose }: { campaignId?: stri
   )
 }
 
+// まとめて承認はせず、1件ずつ読んで「送ってよい」を付けたものだけを承認する
 export function ReplyApproveAll({ ids }: { ids: string[] }) {
-  const approve = useStore((s) => s.approveReplies)
+  const [open, setOpen] = useState(false)
   if (!ids.length) return null
   return (
-    <button
-      className="btn btn-primary"
-      onClick={() => {
-        approve(ids)
-        toast(`返信 ${ids.length}件を承認しました`)
-      }}
-    >
-      <MessageSquareReply size={16} />
-      返信 {ids.length}件をまとめて承認
-    </button>
+    <>
+      <button className="btn btn-primary" onClick={() => setOpen(true)}>
+        <MessageSquareReply size={16} />
+        返信 {ids.length}件を確認して承認
+      </button>
+      {open && <ReplyReviewModal ids={ids} onClose={() => setOpen(false)} />}
+    </>
   )
 }

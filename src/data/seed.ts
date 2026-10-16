@@ -8,6 +8,7 @@ export function defaultSettings(): Settings {
     senderCompany: 'NOTIC',
     senderName: '営業担当',
     senderEmail: 'sales@notic.example',
+    senderAddress: '東京都千代田区（デモ用の住所）',
     signature: 'NOTIC 営業担当\nsales@notic.example\nhttps://notic.jp/qr/',
     dailyLimit: 50,
     sendWindow: '9:00〜18:00',

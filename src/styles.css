@@ -1259,6 +1259,28 @@ table.t {
   transition: width 0.4s ease;
 }
 
+.progress.indeterminate i {
+  width: 35%;
+  animation: indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress.indeterminate i {
+    animation: none;
+    width: 100%;
+    opacity: 0.45;
+  }
+}
+
 /* ── list items ────────────────────────── */
 
 .task {
@@ -2132,6 +2154,10 @@ table.t {
   flex: none;
 }
 
+.toast.error svg {
+  color: #ff9b8f;
+}
+
 @keyframes rise {
   from {
     transform: translateY(8px);
@@ -2281,4 +2307,206 @@ table.t {
   .page-head .actions > .btn {
     flex: 1 1 auto;
   }
+}
+
+/* ── 送信前の確認 ─────────────────────── */
+
+.modal.wide {
+  width: min(1000px, calc(100vw - 32px));
+}
+
+.checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.checks li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+.checks li svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.checks li b {
+  font-weight: 500;
+}
+
+.checks li small {
+  display: block;
+  color: var(--ink-2);
+}
+
+.checks li.ok svg {
+  color: var(--ok);
+}
+
+.checks li.warn,
+.checks li.warn svg {
+  color: var(--amber);
+}
+
+.checks li.error,
+.checks li.error svg {
+  color: var(--warn);
+}
+
+.checks li.warn b,
+.checks li.error b {
+  font-weight: 700;
+}
+
+.review-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+}
+
+.step-no {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+  display: inline-grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex: none;
+}
+
+.review-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 18px;
+  padding: 10px 2px;
+  white-space: normal;
+}
+
+.plan {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.plan li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-soft);
+  font-size: 13.5px;
+}
+
+.links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  word-break: break-all;
+}
+
+.confirm {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  cursor: pointer;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.confirm .check {
+  margin-top: 1px;
+  flex: none;
+}
+
+.confirm small {
+  display: block;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+.confirm.on {
+  border-color: var(--accent-dot);
+  background: var(--accent-soft);
+}
+
+.confirm.amber {
+  border-color: var(--amber-line);
+  background: var(--amber-soft);
+}
+
+.reply-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.reply-body {
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.75;
+  background: var(--bg-soft);
+  border-radius: 10px;
+  padding: 12px 14px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+@media (max-width: 900px) {
+  .review-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── ログイン ─────────────────────────── */
+
+.auth {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+
+.auth-card {
+  width: min(400px, 100%);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+  padding: 28px 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.auth-card .brand {
+  padding: 0;
 }

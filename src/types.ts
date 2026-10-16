@@ -1,4 +1,5 @@
-// DB のテーブルに対応する型。実運用ではこの形のまま Supabase などに置き換えられるようにしている。
+// DB のコレクションに対応する型。デモ（localStorage）と本番（Firestore）で同じ形のまま保存する。
+// 時刻はすべてミリ秒（Date.now()）。
 
 export type Channel = 'email' | 'form' | 'sns'
 
@@ -35,6 +36,8 @@ export type Lead = {
   employees: string
   summary: string
   email?: string
+  // メールアドレスを公開しているページの URL。公開アドレスにだけ送る（特定電子メール法の例外）根拠として残す
+  emailSource?: string
   formUrl?: string
   sns?: string
   channel: Channel
@@ -49,6 +52,7 @@ export type MessageStatus =
   | 'draft'
   | 'approved'
   | 'scheduled'
+  | 'sending'
   | 'sent'
   | 'manual_pending'
   | 'manual_done'
@@ -66,8 +70,13 @@ export type Message = {
   status: MessageStatus
   edited: boolean
   scheduledAt?: number
+  // 送信前の最終確認をした人（本番ではログイン中の管理者のメールアドレス）
+  scheduledBy?: string
   sentAt?: number
   messageId?: string
+  threadId?: string
+  // 送れなかった理由（フォームの CAPTCHA など。人の判断に回す）
+  sendError?: string
   createdAt: number
 }
 
@@ -84,9 +93,15 @@ export type Reaction = {
   excerpt: string
   source: 'gmail' | 'manual'
   receivedAt: number
+  // 返信の差出人とスレッド（承認した返信を同じスレッドに送るため）
+  fromAddress?: string
+  threadId?: string
+  gmailMessageId?: string
+  rfcMessageId?: string
   replyDraft?: {
     body: string
-    status: 'draft' | 'scheduled' | 'sent'
+    status: 'draft' | 'scheduled' | 'sending' | 'sent'
+    approvedBy?: string
     sentAt?: number
   }
 }
@@ -107,8 +122,11 @@ export type Job = {
   plan: string[]
   logs: { t: number; text: string }[]
   summary?: string
-  // 実行開始時に計算し、完了時に DB へ書き込む結果
+  // デモ：実行開始時に計算し、完了時に DB へ書き込む結果／本番：ジョブへの指示（返信の送信、書き直しの対象など）
   payload?: unknown
+  // 本番のランナーが書き込む
+  runnerId?: string
+  error?: string
 }
 
 export type Insight = {
@@ -134,6 +152,8 @@ export type Settings = {
   senderCompany: string
   senderName: string
   senderEmail: string
+  // 特定電子メール法で表示が必要な送信者の住所
+  senderAddress?: string
   signature: string
   dailyLimit: number
   sendWindow: string

@@ -4,6 +4,7 @@ import { ArrowDown, Bot, ChevronRight, Database, Globe, Mail, MonitorSmartphone,
 import { useStore } from '../store'
 import type { Job } from '../types'
 import { JOB_LABEL } from '../data/agent'
+import { IS_DEMO } from '../data/backend'
 import { cx, fmtDateTime, relTime } from '../lib/util'
 import { Pill, Terminal, toast } from '../components/ui'
 import { AgentNow } from '../components/shared'
@@ -17,9 +18,9 @@ function JobStatus({ job }: { job: Job }) {
 
 const ARCH = [
   { icon: MonitorSmartphone, name: '管理サイト', sub: 'この画面。キャンペーン作成・承認', where: 'GitHub Pages' },
-  { icon: Database, name: 'DB', sub: 'ジョブ・企業・文面・送信ログ・反応', where: 'デモ：ブラウザに保存' },
-  { icon: TerminalIcon, name: 'ランナー', sub: '未処理ジョブを確認して1件ずつ起動', where: 'デモ：ブラウザ内で再現' },
-  { icon: Bot, name: 'ClaudeCode', sub: 'claude -p でスラッシュコマンドを実行', where: 'デモ：結果を生成' },
+  { icon: Database, name: 'DB', sub: 'ジョブ・企業・文面・送信ログ・反応', where: IS_DEMO ? 'デモ：ブラウザに保存' : 'Firestore' },
+  { icon: TerminalIcon, name: 'ランナー', sub: '未処理ジョブを確認して1件ずつ起動', where: IS_DEMO ? 'デモ：ブラウザ内で再現' : '社内の Mac（launchd）' },
+  { icon: Bot, name: 'ClaudeCode', sub: 'claude -p でスラッシュコマンドを実行', where: IS_DEMO ? 'デモ：結果を生成' : '.claude/commands' },
 ]
 
 export default function Runner() {
@@ -42,13 +43,15 @@ export default function Runner() {
           <p>ランナーは DB の未処理ジョブを確認し、ClaudeCode のスラッシュコマンドを1件ずつ実行します。</p>
         </div>
         <div className="actions">
-          <div className="seg" role="group" aria-label="デモの速度">
-            {([1, 2, 4] as const).map((v) => (
-              <button key={v} className={settings.runnerSpeed === v ? 'on' : ''} onClick={() => update({ runnerSpeed: v })}>
-                {v}倍速
-              </button>
-            ))}
-          </div>
+          {IS_DEMO && (
+            <div className="seg" role="group" aria-label="デモの速度">
+              {([1, 2, 4] as const).map((v) => (
+                <button key={v} className={settings.runnerSpeed === v ? 'on' : ''} onClick={() => update({ runnerSpeed: v })}>
+                  {v}倍速
+                </button>
+              ))}
+            </div>
+          )}
           <button
             className={cx('btn', settings.runnerPaused ? 'btn-primary' : '')}
             onClick={() => {
@@ -150,7 +153,7 @@ export default function Runner() {
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   runJobNow(j.id)
-                                  toast('予約を待たずに実行します（デモ）')
+                                  toast(IS_DEMO ? '予約を待たずに実行します（デモ）' : '予約を待たずに、ランナーの次の確認で実行します')
                                 }}
                               >
                                 <Play size={13} />
