@@ -25,3 +25,7 @@ allowed-tools: Bash(node runner/agent-tools.ts *), WebFetch, Read, Edit(./runner
 - 実在しない実績・数字、相手の内情の決めつけ（「お困りのはずです」など）
 - 差し込み（〇〇、{{ }}、【会社名】）、別の企業の名前
 - 名乗り・商材の説明・URL・署名（骨格に入っている。重複させない）
+
+## 守ること
+
+- 道具（runner/ や src/）のソースコードは読まない。使い方は `node runner/agent-tools.ts` を引数なしで実行すると出る。

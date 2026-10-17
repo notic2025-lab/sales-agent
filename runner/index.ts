@@ -17,7 +17,15 @@ import * as F from './lib/firebase.ts'
 const RUNNER_ID = opt('RUNNER_ID', hostname())
 const POLL_MS = Number(opt('POLL_SEC', '30')) * 1000
 const MAX_MIN = Number(opt('JOB_TIMEOUT_MIN', '40'))
-const MAX_BUDGET = opt('MAX_BUDGET_USD', '3')
+// 1ジョブの推定費用の上限（暴走止め）。サブスクで動かす場合も推定額で止まる
+const MAX_BUDGET = opt('MAX_BUDGET_USD', '10')
+
+// 失敗の理由を、画面に出す日本語にする
+const FAIL_REASON: Record<string, string> = {
+  error_max_budget_usd: `1ジョブの上限（推定 $${MAX_BUDGET}）に達したため止まりました。途中まで保存した分は残っています`,
+  error_max_turns: 'やりとりの回数の上限に達したため止まりました',
+  error_during_execution: '実行中にエラーが起きました',
+}
 const CLAUDE = opt('CLAUDE_BIN', 'claude')
 // 秘密情報とコードは読ませない・書かせない（作業フォルダの信頼設定に関係なく効くよう、起動時に渡す）
 const DENIED = [
@@ -78,7 +86,7 @@ async function sweep(db: Firestore) {
   }
 }
 
-type Event = { type: string; subtype?: string; message?: { content?: { type: string; text?: string; name?: string; input?: Record<string, unknown> }[] }; result?: string; is_error?: boolean; total_cost_usd?: number; permission_denials?: unknown[] }
+type Event = { type: string; subtype?: string; num_turns?: number; message?: { content?: { type: string; text?: string; name?: string; input?: Record<string, unknown> }[] }; result?: string; is_error?: boolean; total_cost_usd?: number; permission_denials?: unknown[] }
 
 function describe(ev: Event): string[] {
   if (ev.type !== 'assistant') return []
@@ -157,7 +165,12 @@ function run(db: Firestore, job: Job): Promise<{ ok: boolean; summary: string; e
       }
     })
     child.stderr.on('data', (c: Buffer) => {
-      stderr += c.toString()
+      // 作業フォルダの信頼設定の警告は、許可を --allowedTools で渡しているので無視してよい
+      stderr += c
+        .toString()
+        .split('\n')
+        .filter((l) => l.trim() && !l.includes('this workspace has not been trusted'))
+        .join('\n')
     })
     const killer = setTimeout(() => {
       push(`✕ ${MAX_MIN}分を超えたため中断します`)
@@ -173,7 +186,8 @@ function run(db: Firestore, job: Job): Promise<{ ok: boolean; summary: string; e
       const summary = (result?.result ?? '').trim().split('\n').slice(-1)[0]?.slice(0, 80) ?? ''
       push(ok ? `✓ 完了${cost}` : `✕ 失敗（終了コード ${code}）${cost}`)
       flush()
-      resolve({ ok, summary, error: ok ? undefined : (result?.result ?? stderr).slice(-500) })
+      const reason = result?.subtype ? FAIL_REASON[result.subtype] : undefined
+      resolve({ ok, summary, error: ok ? undefined : (reason ?? result?.result ?? stderr ?? `終了コード ${code}`).slice(-500) })
     })
   })
 }

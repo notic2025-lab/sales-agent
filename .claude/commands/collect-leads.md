@@ -27,12 +27,13 @@ allowed-tools: Bash(node runner/agent-tools.ts *), WebSearch, WebFetch, Read, Ed
    - `low`：合う根拠がない。保存されない
    根拠が出せないのに `high` にしない。`high` の割合が高すぎるときは、もう一度引用を確かめる。
 6. スコア（0〜100）と理由（`scoreReasons`、3〜6 個）を付ける。観点：条件との一致度、店舗・拠点数など導入効果の大きさ、販促の活発さ、連絡のしやすさ、`repliedPositively` との近さ。
-7. `runner/work/$ARGUMENTS/leads.json` に配列で書き（1件 = `{company, domain, industry, region, employees, summary, email, emailSource, formUrl, sns, channel, score, scoreReasons, pages, confidence, evidence, individual, noSolicitation}`）、
+7. **10社たまるごとに保存する**（途中で止まっても集めた分が残るように）。`runner/work/$ARGUMENTS/leads.json` に配列で書き（1件 = `{company, domain, industry, region, employees, summary, email, emailSource, formUrl, sns, channel, score, scoreReasons, pages, confidence, evidence, individual, noSolicitation}`）、
    `node runner/agent-tools.ts save-leads $ARGUMENTS --file runner/work/$ARGUMENTS/leads.json` で保存する。`skipped` の理由を確認し、直せるものは直して再保存する。
 8. `node runner/agent-tools.ts summary $ARGUMENTS "<収集・承認した社数と一言>"` で結果を残す。
 
 ## 守ること
 
+- 道具（runner/ や src/）のソースコードは読まない。使い方は `node runner/agent-tools.ts` を引数なしで実行すると出る。
 - 企業サイトのフォームには入力しない。ログインが必要なサイトや、robots で拒否されたページは開かない。
 - 検索と閲覧は 1 サイトあたり 5 ページまで。同じサイトを続けて叩かない。
 - `channel` はキャンペーンの `channels` の順に、使える連絡先があるものを選ぶ。

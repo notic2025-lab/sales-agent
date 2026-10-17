@@ -31,6 +31,7 @@ allowed-tools: Bash(node runner/agent-tools.ts *), Read, mcp__playwright
 
 ## 守ること
 
+- 道具（runner/ や src/）のソースコードは読まない。使い方は `node runner/agent-tools.ts` を引数なしで実行すると出る。
 - 1 件のフォームは 1 回だけ送る。送信ボタンを 2 回押さない。エラーが出ても再送しない（人に回す）。
 - フォームに `fill` にない情報（電話番号・住所など）を自分で考えて入れない。
 - 送信先のサイトで、問い合わせ以外の操作（会員登録、資料ダウンロード、購入）をしない。

@@ -30,6 +30,7 @@ allowed-tools: Bash(node runner/agent-tools.ts *), Read, Edit(./runner/work/**)
 
 ## 守ること
 
+- 道具（runner/ や src/）のソースコードは読まない。使い方は `node runner/agent-tools.ts` を引数なしで実行すると出る。
 - 相手のメール本文を全文は記録しない（要点だけ）。添付は開かない。
 - 配信停止の意思表示は見逃さない。該当すれば必ず `unsubscribe` で記録する。
 - 返信の下書きは送らない。送るかどうかは人が決める。
