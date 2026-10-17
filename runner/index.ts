@@ -17,8 +17,10 @@ import * as F from './lib/firebase.ts'
 const RUNNER_ID = opt('RUNNER_ID', hostname())
 const POLL_MS = Number(opt('POLL_SEC', '30')) * 1000
 const MAX_MIN = Number(opt('JOB_TIMEOUT_MIN', '40'))
-// 1ジョブの推定費用の上限（暴走止め）。サブスクで動かす場合も推定額で止まる
-const MAX_BUDGET = opt('MAX_BUDGET_USD', '10')
+// モデルは毎回 Opus 5.5（runner/.env の CLAUDE_MODEL で変えられる）
+const MODEL = opt('CLAUDE_MODEL', 'claude-opus-5-5')
+// 1ジョブの推定費用の上限。既定はなし（MAX_BUDGET_USD を入れたときだけ止める）。時間の上限 JOB_TIMEOUT_MIN は常に効く
+const MAX_BUDGET = process.env.MAX_BUDGET_USD || ''
 
 // 失敗の理由を、画面に出す日本語にする
 const FAIL_REASON: Record<string, string> = {
@@ -120,7 +122,8 @@ function run(db: Firestore, job: Job): Promise<{ ok: boolean; summary: string; e
       '--permission-mode', 'dontAsk',
       '--allowedTools', ALLOWED,
       '--disallowedTools', DENIED,
-      '--max-budget-usd', MAX_BUDGET,
+      '--model', MODEL,
+      ...(MAX_BUDGET ? ['--max-budget-usd', MAX_BUDGET] : []),
       '--no-session-persistence',
       ...(job.type === 'send-approved' || job.type === 'collect-leads'
         ? ['--mcp-config', path.join(REPO_DIR, 'runner', 'mcp.json'), '--strict-mcp-config']
@@ -195,7 +198,7 @@ function run(db: Firestore, job: Job): Promise<{ ok: boolean; summary: string; e
 async function main() {
   const once = process.argv.includes('--once')
   const { db, email } = await F.connect()
-  log(`起動：${RUNNER_ID} として ${email} でログイン（SEND_MODE=${SEND_MODE}）`)
+  log(`起動：${RUNNER_ID} として ${email} でログイン（SEND_MODE=${SEND_MODE}・モデル ${MODEL}・費用の上限 ${MAX_BUDGET ? `$${MAX_BUDGET}` : 'なし'}）`)
   await sweep(db)
   let stopping = false
   process.on('SIGTERM', () => {

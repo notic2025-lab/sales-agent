@@ -159,7 +159,7 @@ sed -e "s#__REPO__#$(pwd)#g" -e "s#__NODE__#$(which node)#g" -e "s#__HOME__#$HOM
 
 ### ランナーの仕組み
 
-- `runner/index.ts` … `jobs` から「順番待ちで実行時刻を過ぎたもの」を1件ずつトランザクションで取り、`claude -p "/<type> <job_id>"` を実行。出力を `jobs.logs` に流し、終わったら done / failed にする
+- `runner/index.ts` … `jobs` から「順番待ちで実行時刻を過ぎたもの」を1件ずつトランザクションで取り、`claude -p "/<type> <job_id>"` を実行。出力を `jobs.logs` に流し、終わったら done / failed にする。モデルは毎回 Opus 5.5（`CLAUDE_MODEL`、Claude Code 2.1.280 以上が必要）、費用の上限は既定でなし（`MAX_BUDGET_USD` を入れたときだけ止める。時間の上限 `JOB_TIMEOUT_MIN` は常に効く）
 - `runner/agent-tools.ts` … ClaudeCode から呼ぶ道具。DB の読み書き・送信ガード・Gmail はすべてここを通す。ClaudeCode に許す操作は `.claude/settings.json` と `--allowedTools` で「この道具・検索・閲覧・`runner/work/` への書き込み・Playwright」に絞り、`--permission-mode dontAsk` で許可のない操作は止める
 - `.claude/commands/*.md` … 4つのスラッシュコマンド。`send-approved` は本文を書かず、道具が DB の承認済みの文面をそのまま送る
 - `runner/mcp.json` … フォーム入力に使う Playwright MCP（ヘッドレス・使い捨てプロファイル）
