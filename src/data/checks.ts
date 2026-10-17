@@ -39,7 +39,7 @@ export type CheckContext = {
 
 const PLACEHOLDER = /\{\{|\}\}|〇〇|○○|◯◯|【(?:会社名|社名|企業名|氏名|担当者名|御社名)】|\[(?:会社名|社名|企業名|氏名|担当者名)\]/
 // 承認なしで送る前提なので、言い過ぎ・断定は機械的に止める
-export const HYPE = /必ず|絶対|100%|１００％|No\.?\s?1|ナンバーワン|業界最安|業界最高|日本一|世界一|確実に|保証(?:し|いた)/
+export const HYPE = /必ず|絶対|劇的|100%|１００％|No\.?\s?1|ナンバーワン|業界最安|業界最高|日本一|世界一|確実に|保証(?:し|いた)/
 const OPT_OUT = /配信停止|受信拒否|配信を希望されない|ご案内が不要/
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -93,6 +93,7 @@ export function checkMessage(m: Message, ctx: CheckContext): Check[] {
 
   // 中身
   if (m.channel !== 'sns' && !m.subject.trim()) err('subject', '件名が空です')
+  else if (m.channel !== 'sns' && m.subject.length > 40) warn('subject', `件名が長めです（${m.subject.length}文字。スマホでは途中で切れます）`)
   if (!m.body.trim()) err('body', '本文が空です')
   if (PLACEHOLDER.test(m.subject) || PLACEHOLDER.test(m.body)) err('placeholder', '差し込みが残っています（〇〇、{{ }}、【会社名】など）')
   const other = ctx.otherLeads?.find((l) => l.id !== lead.id && l.company !== lead.company && m.body.includes(l.company))

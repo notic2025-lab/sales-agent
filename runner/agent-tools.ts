@@ -11,7 +11,7 @@ import path from 'node:path'
 import { doc, setDoc, updateDoc, writeBatch, type Firestore } from 'firebase/firestore'
 import type { Campaign, Channel, Confidence, Insight, Job, JobType, Lead, Message, Reaction, RejectReason, Settings } from '../src/types.ts'
 import { checkMessage, checkReply, emailDomain, hasError } from '../src/data/checks.ts'
-import { INTRO_MAX, assembleBody, defaultSubject } from '../src/data/compose.ts'
+import { INTRO_MAX, SUBJECT_MAX, assembleBody, casesOf, defaultSubject } from '../src/data/compose.ts'
 import { REJECT_REASON, isAutoList, isAutoSend, normalizeDomain } from '../src/data/leads.ts'
 import { isOpen, jstDateKey, jstDayStart, nextOpen, planSends } from '../src/data/sendPlan.ts'
 import { SEND_MODE, WORK_DIR, opt } from './lib/env.ts'
@@ -185,8 +185,11 @@ async function context(jobId?: string) {
     const skeleton = {
       email: assembleBody(settings, campaign, sampleLead, 'email', '（ここにあなたが書く intro が入ります）'),
       sns: assembleBody(settings, campaign, sampleLead, 'sns', '（ここにあなたが書く intro が入ります）'),
-      subjectExamples: { A: defaultSubject(campaign, sampleLead, 'A'), B: defaultSubject(campaign, sampleLead, 'B') },
+      fallbackSubjects: { A: defaultSubject(campaign, sampleLead, 'A'), B: defaultSubject(campaign, sampleLead, 'B') },
       introMaxChars: INTRO_MAX,
+      subjectMaxChars: SUBJECT_MAX,
+      // パターンB（事例紹介型）で使ってよい事例。空ならパターンBは使わない
+      caseStudies: casesOf(campaign.product),
     }
     const sendApproval = isAutoSend(campaign) ? 'auto' : 'manual'
     if (rewrite?.length) {
@@ -390,7 +393,15 @@ async function saveDrafts(jobId: string | undefined, file: string | true | undef
       continue
     }
     const channel = target?.channel ?? lead.channel
-    const subject = channel === 'sns' ? '' : (x.subject ?? '').trim().slice(0, 40) || defaultSubject(campaign, lead, pattern)
+    if ((x.subject ?? '').trim().length > SUBJECT_MAX) {
+      skip(`件名が長すぎます（${(x.subject ?? '').trim().length}文字。${SUBJECT_MAX}文字まで）`)
+      continue
+    }
+    if (pattern === 'B' && !casesOf(campaign.product).length) {
+      skip('導入事例が登録されていないので、パターンBは使えません（パターンAで書いてください）')
+      continue
+    }
+    const subject = channel === 'sns' ? '' : (x.subject ?? '').trim() || defaultSubject(campaign, lead, pattern)
     // 骨格は道具が組む。エージェントの文はこの intro だけ
     const body = assembleBody(settings, campaign, lead, channel, intro)
     const m: Message = target

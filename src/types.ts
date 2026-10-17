@@ -11,6 +11,8 @@ export type Campaign = {
     summary: string
     strengths: string
     url: string
+    // 実際の導入事例（1行に1つ）。文面ではここに書いた事例だけを使う
+    caseStudies?: string
   }
   conditions: {
     industries: string[]

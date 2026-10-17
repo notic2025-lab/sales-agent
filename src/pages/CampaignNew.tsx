@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bot, FilePenLine, Rocket, ShieldCheck, UserCheck } from 'lucide-react'
 import { useStore } from '../store'
-import type { Channel } from '../types'
+import type { Campaign, Channel } from '../types'
 import { CHANNEL_LABEL, SIZES } from '../data/agent'
 import { regionLabel, shortList } from '../data/options'
 import { IndustryPicker, RegionPicker } from '../components/pickers'
@@ -22,11 +22,12 @@ export default function CampaignNew() {
   const nav = useNavigate()
   const create = useStore((s) => s.createCampaign)
   const [name, setName] = useState('')
-  const [product, setProduct] = useState({
+  const [product, setProduct] = useState<Campaign['product']>({
     name: '可変QR',
     summary: '印刷・設置したあとでもQRの行き先を変えられるサービスです。1つのQRに複数のリンクをまとめ、どれだけ読まれたかもレポートで確かめられます。',
     strengths: '印刷物を刷り直さずにリンクを差し替えられる\n日時を決めて自動で切り替えられる\n読み取り数のレポートがLINEやメールに届く',
     url: 'https://notic.jp/qr/',
+    caseStudies: '',
   })
   const [industries, setIndustries] = useState<string[]>(['宿泊・観光'])
   const [regions, setRegions] = useState<string[]>(['京都', '大阪'])
@@ -94,6 +95,19 @@ export default function CampaignNew() {
               <div className="field">
                 <label htmlFor="pstr">強み</label>
                 <textarea id="pstr" className="textarea" rows={3} value={product.strengths} onChange={(e) => setProduct({ ...product, strengths: e.target.value })} />
+                <span className="hint">機能より「相手にとって何が変わるか」で書くと返信につながります（例：刷り直しの費用がなくなる）。</span>
+              </div>
+              <div className="field">
+                <label htmlFor="pcase">導入事例（任意）</label>
+                <textarea
+                  id="pcase"
+                  className="textarea"
+                  rows={3}
+                  value={product.caseStudies ?? ''}
+                  placeholder={'1行に1つ。「どんな会社：どう使って、何が変わったか」\n例：京都の旅館グループ（3館）：館内掲示のQRを貼ったまま季節ごとに案内を切り替え、刷り直しがなくなった'}
+                  onChange={(e) => setProduct({ ...product, caseStudies: e.target.value })}
+                />
+                <span className="hint">ここに書いた事例だけを文面で使います（エージェントが事例を作ることはありません）。社名を出せない場合は業種と規模で。</span>
               </div>
             </div>
           </section>

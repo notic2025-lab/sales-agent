@@ -16,7 +16,7 @@ import type {
 import type { Confidence } from '../types'
 import { HOUR, MIN, between, fmtDateTime, nextBusinessMorning, pick, shuffle, uid, type Rng } from '../lib/util'
 import { checkMessage, hasError } from './checks'
-import { assembleBody, defaultSubject } from './compose'
+import { assembleBody, casesOf, defaultSubject } from './compose'
 import { REJECT_REASON, isAutoList, isAutoSend } from './leads'
 import { planSends } from './sendPlan'
 import { IS_DEMO } from './backend'
@@ -291,14 +291,20 @@ export function composeMessage(
   const pr = campaign.product
   const useNumber = insights.some((i) => i.key === 'subject-number')
   const count = numberOf(lead)
-  const subject = lead.channel === 'sns' ? '' : defaultSubject(campaign, lead, pattern, useNumber ? count || undefined : undefined)
-  // デモ：エージェントが書く部分（相手企業に触れる数文）をテンプレートで代用する
+  const cases = casesOf(pr)
+  // デモ：本番では Claude が相手ごとに書く件名と書き出しを、テンプレートで代用する
+  const subject =
+    lead.channel === 'sns'
+      ? ''
+      : pattern === 'A' && useNumber && count
+        ? `${count}の${p.unit === '店舗' ? '店頭' : '現場'}の案内物を、刷り直さずに更新する方法`
+        : defaultSubject(campaign, lead, pattern)
   const intro =
     lead.channel === 'sns'
-      ? p.hook
-      : pattern === 'A'
-        ? `貴社サイトで${p.observe}を拝見し、ご連絡いたしました。\n${p.hook}`
-        : `${lead.industry}の企業さまで、${pr.name}をこのように使っていただいています。\n・${p.unit}ごとの担当者さまの作業が減った\n・本部で反応を数字で確かめられるようになった`
+      ? `${count ? `${count}で` : ''}${p.observe}を拝見しました。${p.hook}`
+      : pattern === 'B' && cases.length
+        ? `${cases[0].split('：')[0]}では「${cases[0].split('：')[1] ?? cases[0]}」という結果が出ています。\n${count ? `${count}を運営されている` : ''}貴社でも、同じ使い方ができると考えご連絡しました。`
+        : `貴社サイトで${p.observe}を拝見しました。${count ? `${count}ある${p.unit}ごとに` : `${p.unit}ごとに`}、掲示物や案内を差し替えるたびに刷り直しや貼り替えが発生しているのではと思い、ご連絡しました。`
   return { subject, body: assembleBody(db.settings, campaign, lead, lead.channel, intro), intro, insightIds: insights.map((i) => i.id) }
 }
 

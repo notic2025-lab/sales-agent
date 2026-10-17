@@ -292,6 +292,8 @@ export default function CampaignDetail() {
                 <dd>{campaign.product.summary}</dd>
                 <dt>強み</dt>
                 <dd style={{ whiteSpace: 'pre-wrap' }}>{campaign.product.strengths}</dd>
+                <dt>導入事例</dt>
+                <dd style={{ whiteSpace: 'pre-wrap' }}>{campaign.product.caseStudies || <span className="muted">なし（事例を使わない文面になります）</span>}</dd>
                 <dt>URL</dt>
                 <dd className="mono">{campaign.product.url}</dd>
               </dl>
