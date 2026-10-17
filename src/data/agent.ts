@@ -21,8 +21,9 @@ import { REJECT_REASON, isAutoList, isAutoSend } from './leads'
 import { planSends } from './sendPlan'
 import { IS_DEMO } from './backend'
 
-export const INDUSTRIES = ['飲食', '小売', '不動産', 'クリニック', '製造', '宿泊・観光', '美容', '教育'] as const
-export const REGIONS = ['東京', '神奈川', '埼玉', '千葉', '大阪', '京都', '愛知', '福岡'] as const
+// デモの企業データを作れる業種と、条件の指定がないときに使う地域
+const DEMO_INDUSTRIES = ['飲食', '小売', '不動産', 'クリニック', '製造', '宿泊・観光', '美容', '教育'] as const
+const DEMO_REGIONS = ['東京', '神奈川', '埼玉', '千葉', '大阪', '京都', '愛知', '福岡'] as const
 export const SIZES = ['指定なし', '〜10名', '11〜50名', '51〜300名', '301名〜'] as const
 
 export const CHANNEL_LABEL: Record<Channel, string> = {
@@ -149,13 +150,23 @@ const PROFILES: Record<string, Profile> = {
   },
 }
 
+// デモ：一覧の業種以外は、汎用の企業データで作る
+const GENERIC: Profile = {
+  stems: [['サービス', 'service'], ['ホールディングス', 'hd'], ['企画', 'kikaku'], ['産業', 'sangyo'], ['ソリューションズ', 'solutions'], ['商事', 'shoji']],
+  observe: '事業紹介と拠点一覧のページ',
+  hook: '複数の拠点で事業を展開されている企業さまから、印刷物や掲示物の差し替えの手間についてご相談をいただくことが増えています。',
+  unit: '拠点',
+  summaries: [(r, n) => `${r}を中心に${n}拠点で事業を展開。店頭や施設での案内物を拠点ごとに用意している。`],
+}
+const profileOf = (industry: string) => PROFILES[industry] ?? GENERIC
+
 const SNS_HANDLES = ['@', 'instagram.com/', 'x.com/']
 
 function makeLead(rng: Rng, campaign: Campaign, used: Set<string>, now: number): Lead {
   const cond = campaign.conditions
-  const industry = cond.industries.length ? pick(rng, cond.industries) : pick(rng, INDUSTRIES)
-  const region = cond.regions.length ? pick(rng, cond.regions) : pick(rng, REGIONS)
-  const p = PROFILES[industry] ?? PROFILES['小売']
+  const industry = cond.industries.length ? pick(rng, cond.industries) : pick(rng, DEMO_INDUSTRIES)
+  const region = cond.regions.length ? pick(rng, cond.regions) : pick(rng, DEMO_REGIONS)
+  const p = profileOf(industry)
   let stem = pick(rng, STEMS)
   let suffix = pick(rng, p.stems)
   let guard = 0
@@ -276,7 +287,7 @@ export function composeMessage(
   pattern: 'A' | 'B',
   insights: Insight[],
 ): Pick<Message, 'subject' | 'body' | 'intro' | 'insightIds'> {
-  const p = PROFILES[lead.industry] ?? PROFILES['小売']
+  const p = profileOf(lead.industry)
   const pr = campaign.product
   const useNumber = insights.some((i) => i.key === 'subject-number')
   const count = numberOf(lead)

@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bot, Check, FilePenLine, Rocket, ShieldCheck, UserCheck } from 'lucide-react'
+import { Bot, FilePenLine, Rocket, ShieldCheck, UserCheck } from 'lucide-react'
 import { useStore } from '../store'
 import type { Channel } from '../types'
-import { CHANNEL_LABEL, INDUSTRIES, REGIONS, SIZES } from '../data/agent'
+import { CHANNEL_LABEL, SIZES } from '../data/agent'
+import { regionLabel, shortList } from '../data/options'
+import { IndustryPicker, RegionPicker } from '../components/pickers'
 import { cx } from '../lib/util'
 import { APPROVAL_MODE, modeToFields, type ApprovalMode } from '../data/leads'
 import { CHANNEL_ICON, toast } from '../components/ui'
@@ -35,7 +37,7 @@ export default function CampaignNew() {
   const [evalAfterDays, setEval] = useState(7)
   const [mode, setMode] = useState<ApprovalMode>('auto')
 
-  const autoName = `${product.name || '商材'}｜${industries.length ? industries.join('・') : '業種指定なし'}`
+  const autoName = `${product.name || '商材'}｜${industries.length ? shortList(industries, 3, '業種') : '業種指定なし'}${regions.length ? `｜${regionLabel(regions)}` : ''}`
   const toggle = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v])
   const valid = product.name.trim() && product.summary.trim() && channels.length > 0
 
@@ -53,7 +55,7 @@ export default function CampaignNew() {
     nav(`/lists/${id}`)
   }
 
-  const brief = `${regions.length ? regions.join('・') : '全国'}の${industries.length ? industries.join('・') : 'さまざまな業種'}の企業を${count}社集めます。${
+  const brief = `${regionLabel(regions)}の${industries.length ? shortList(industries, 5, '業種') : 'さまざまな業種'}の企業を${count}社集めます。${
     size !== '指定なし' ? `従業員規模は${size}。` : ''
   }${channels.map((c) => CHANNEL_LABEL[c]).join('・') || '（チャネル未選択）'}で連絡し、送信の${evalAfterDays}日後に反応を評価します。`
 
@@ -106,25 +108,11 @@ export default function CampaignNew() {
             <div className="fields">
               <div className="field">
                 <span className="label">業種</span>
-                <div className="row wrap" style={{ gap: 8 }}>
-                  {INDUSTRIES.map((x) => (
-                    <button type="button" key={x} className={cx('chip', industries.includes(x) && 'on')} onClick={() => setIndustries(toggle(industries, x))}>
-                      {industries.includes(x) && <Check size={14} />}
-                      {x}
-                    </button>
-                  ))}
-                </div>
+                <IndustryPicker value={industries} onChange={setIndustries} />
               </div>
               <div className="field">
                 <span className="label">地域</span>
-                <div className="row wrap" style={{ gap: 8 }}>
-                  {REGIONS.map((x) => (
-                    <button type="button" key={x} className={cx('chip', regions.includes(x) && 'on')} onClick={() => setRegions(toggle(regions, x))}>
-                      {regions.includes(x) && <Check size={14} />}
-                      {x}
-                    </button>
-                  ))}
-                </div>
+                <RegionPicker value={regions} onChange={setRegions} />
               </div>
               <div className="fields two">
                 <div className="field">
@@ -243,7 +231,7 @@ export default function CampaignNew() {
               {'\n'}
               <span className="sub">  商材：{product.name || '—'}</span>
               {'\n'}
-              <span className="sub">  条件：{[...industries, ...regions].join(' / ') || '指定なし'}</span>
+              <span className="sub">  条件：{[shortList(industries, 3, '業種'), regions.length ? regionLabel(regions) : ''].filter(Boolean).join(' / ') || '指定なし'}</span>
               {'\n'}
               <span className="sub">  件数：{count} ・ 評価：送信の{evalAfterDays}日後</span>
             </div>

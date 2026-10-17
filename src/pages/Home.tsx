@@ -6,6 +6,7 @@ import { stageOf, statsOf } from '../data/selectors'
 import { JOB_LABEL } from '../data/agent'
 import { fmtDate, pct } from '../lib/util'
 import { MiniSteps, StagePill } from '../components/ui'
+import { regionLabel, shortList } from '../data/options'
 
 export default function Home() {
   const db = useStore()
@@ -61,7 +62,7 @@ export default function Home() {
               </div>
               <b className="title">{c.name}</b>
               <div className="row wrap" style={{ gap: 4 }}>
-                {[...c.conditions.industries, ...c.conditions.regions].slice(0, 4).map((x) => (
+                {[shortList(c.conditions.industries, 2, '業種'), regionLabel(c.conditions.regions)].filter(Boolean).map((x) => (
                   <span className="tag" key={x}>
                     {x}
                   </span>

@@ -6,6 +6,7 @@ import { stageOf, statsOf } from '../data/selectors'
 import { CHANNEL_LABEL, JOB_LABEL } from '../data/agent'
 import { fmtDateTime, pct } from '../lib/util'
 import { IS_DEMO } from '../data/backend'
+import { regionLabel, shortList } from '../data/options'
 import { ChannelLabel, Empty, Pill, StagePill, Stepper, Terminal, toast } from '../components/ui'
 import { ManualReactionModal, ReactionTable, ReplyApproveAll } from '../components/reactions'
 import { Report } from '../components/Report'
@@ -73,7 +74,7 @@ export default function CampaignDetail() {
             <h1 style={{ fontSize: 24, lineHeight: 1.35 }}>{campaign.name}</h1>
             <div className="row wrap" style={{ gap: 6, marginTop: 10 }}>
               <span className="tag">商材 {campaign.product.name}</span>
-              {[...campaign.conditions.industries, ...campaign.conditions.regions].map((x) => (
+              {[shortList(campaign.conditions.industries, 3, '業種'), regionLabel(campaign.conditions.regions)].filter(Boolean).map((x) => (
                 <span className="tag" key={x}>
                   {x}
                 </span>
@@ -305,7 +306,7 @@ export default function CampaignDetail() {
                 <dt>業種</dt>
                 <dd>{campaign.conditions.industries.join('・') || '指定なし'}</dd>
                 <dt>地域</dt>
-                <dd>{campaign.conditions.regions.join('・') || '指定なし'}</dd>
+                <dd>{campaign.conditions.regions.join('・') || '全国'}</dd>
                 <dt>従業員規模</dt>
                 <dd>{campaign.conditions.size}</dd>
                 <dt>収集件数</dt>
