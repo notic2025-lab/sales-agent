@@ -9,6 +9,7 @@ import { cx, fmtDateTime } from '../../lib/util'
 import { CHANNEL_ICON, ChannelLabel, Empty, Pill, toast } from '../../components/ui'
 import { CheckBadge, FinalReviewModal, MessageChecks, SendPreview, useCheckEnv } from '../../components/review'
 import { RejectReasonModal } from '../../components/reject'
+import { RemakeDraftsButton } from './ProductCard'
 
 export const MSG_STATUS: Record<MessageStatus, { label: string; tone: string }> = {
   draft: { label: '確認待ち', tone: 'amber' },
@@ -163,6 +164,9 @@ export function MessagesTab({ campaignId, initialFilter }: { campaignId: string;
             </button>
           ))}
         </div>
+        <span style={{ marginLeft: 'auto' }}>
+          <RemakeDraftsButton campaignId={campaignId} count={reviewing} />
+        </span>
       </div>
 
       <div className="card split">

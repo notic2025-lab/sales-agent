@@ -3,6 +3,7 @@
 // 変わらない行は同じオブジェクトのまま返す（本番の差分書き込みが参照の一致で判定するため）。
 import type { Activity, Campaign, DB, LeadStatus, Message, ReactionType, RejectReason, Sentiment, Settings } from '../types'
 import { autoSchedule, composeMessage, newJob } from './agent'
+import { casesOf } from './compose'
 import { REJECT_REASON, isAutoList, isAutoSend } from './leads'
 import { uid } from '../lib/util'
 
@@ -102,6 +103,52 @@ export function requestRewrite(s: DB, id: string, now: number): Patch {
   return {
     messages: s.messages.map((x) => (x.id === id && x.status !== 'draft' ? { ...x, status: 'draft' } : x)),
     jobs: [...s.jobs, newJob('draft-messages', m.campaignId, now, now, { rewrite: [{ messageId: id, pattern }] })],
+  }
+}
+
+// 作成後に商材の情報（導入事例など）を直す
+export function updateProduct(s: DB, campaignId: string, product: Campaign['product']): Patch {
+  return { campaigns: s.campaigns.map((c) => (c.id === campaignId ? { ...c, product } : c)) }
+}
+
+// 送る前の文面（下書き・承認済み）を、いまの商材の情報と書き方でまとめて作り直す。
+// 事例が登録されていない営業リストでは、パターンBの文面はAで作り直す
+const remakeTargets = (s: DB, campaignId: string) =>
+  s.messages.filter((m) => m.campaignId === campaignId && (m.status === 'draft' || m.status === 'approved'))
+
+// デモ：その場で作り直す
+export function remakeDraftsNow(s: DB, campaignId: string): Patch {
+  const campaign = s.campaigns.find((c) => c.id === campaignId)
+  const ids = new Set(remakeTargets(s, campaignId).map((m) => m.id))
+  if (!campaign || !ids.size) return {}
+  const hasCases = casesOf(campaign.product).length > 0
+  const insights = s.insights.filter((i) => i.active)
+  return {
+    messages: s.messages.map((m) => {
+      const lead = s.leads.find((l) => l.id === m.leadId)
+      if (!ids.has(m.id) || !lead) return m
+      const pattern = m.pattern === 'B' && !hasCases ? 'A' : m.pattern
+      return { ...m, ...composeMessage(s, campaign, lead, pattern, insights), pattern, status: 'draft', edited: false }
+    }),
+  }
+}
+
+// 本番：/draft-messages に作り直しを依頼する（下書きに戻し、ランナーが次の確認で書き直す）
+export function requestRemakeDrafts(s: DB, campaignId: string, now: number): Patch {
+  const campaign = s.campaigns.find((c) => c.id === campaignId)
+  const targets = remakeTargets(s, campaignId)
+  if (!campaign || !targets.length) return {}
+  const ids = new Set(targets.map((m) => m.id))
+  const hasCases = casesOf(campaign.product).length > 0
+  return {
+    messages: s.messages.map((m) => (ids.has(m.id) && m.status !== 'draft' ? { ...m, status: 'draft' } : m)),
+    jobs: [
+      ...s.jobs,
+      newJob('draft-messages', campaignId, now, now, {
+        rewrite: targets.map((m) => ({ messageId: m.id, pattern: m.pattern === 'B' && !hasCases ? 'A' : m.pattern })),
+      }),
+    ],
+    activities: [act(now, `文面 ${targets.length}件の作り直しを依頼しました`, campaignId), ...s.activities],
   }
 }
 

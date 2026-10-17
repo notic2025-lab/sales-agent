@@ -1,6 +1,6 @@
 import { create, type StoreApi, type UseBoundStore } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import type { DB, Job, LeadStatus, ReactionType, RejectReason, Sentiment, Settings } from './types'
+import type { Campaign, DB, Job, LeadStatus, ReactionType, RejectReason, Sentiment, Settings } from './types'
 import { applyJob, planJob } from './data/agent'
 import { blankSettings, createSeed, defaultSettings } from './data/seed'
 import * as T from './data/transitions'
@@ -27,6 +27,8 @@ type Actions = {
   updateMessage: (id: string, patch: { subject?: string; body?: string }) => void
   setMessagesApproved: (ids: string[], approved: boolean) => void
   rewriteMessage: (id: string) => void
+  updateProduct: (campaignId: string, product: Campaign['product']) => void
+  remakeDrafts: (campaignId: string) => void
   scheduleSend: (campaignId: string, messageIds: string[], runAt: number) => void
   cancelSchedule: (campaignId: string) => void
   markManualDone: (id: string) => void
@@ -121,6 +123,9 @@ function actions(set: SetState, get: GetState): Actions {
     updateMessage: (id, patch) => commit((s) => T.updateMessage(s, id, patch)),
     setMessagesApproved: (ids, approved) => commit((s, now) => T.setMessagesApproved(s, ids, approved, now, by())),
     rewriteMessage: (id) => commit((s, now) => (BACKEND === 'demo' ? T.rewriteMessageNow(s, id) : T.requestRewrite(s, id, now))),
+    updateProduct: (campaignId, product) => commit((s) => T.updateProduct(s, campaignId, product)),
+    remakeDrafts: (campaignId) =>
+      commit((s, now) => (BACKEND === 'demo' ? T.remakeDraftsNow(s, campaignId) : T.requestRemakeDrafts(s, campaignId, now))),
     scheduleSend: (campaignId, messageIds, runAt) => commit((s, now) => T.scheduleSend(s, campaignId, messageIds, runAt, now, by())),
     cancelSchedule: (campaignId) => commit((s, now) => T.cancelSchedule(s, campaignId, now)),
     markManualDone: (id) => commit((s, now) => T.markManualDone(s, id, now)),

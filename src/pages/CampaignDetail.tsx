@@ -12,6 +12,7 @@ import { ManualReactionModal, ReactionTable, ReplyApproveAll } from '../componen
 import { Report } from '../components/Report'
 import { LeadsTab } from './campaign/LeadsTab'
 import { MessagesTab, MSG_STATUS } from './campaign/MessagesTab'
+import { ProductCard } from './campaign/ProductCard'
 
 type Tab = 'leads' | 'messages' | 'log' | 'reactions' | 'report' | 'brief'
 
@@ -278,27 +279,7 @@ export default function CampaignDetail() {
       {tab === 'report' && <Report campaignId={id} />}
       {tab === 'brief' && (
         <div className="grid g-2">
-          <div className="card">
-            <div className="card-head">
-              <h2>商材</h2>
-            </div>
-            <div className="card-body">
-              <dl className="kv">
-                <dt>商材名</dt>
-                <dd>
-                  <b>{campaign.product.name}</b>
-                </dd>
-                <dt>概要</dt>
-                <dd>{campaign.product.summary}</dd>
-                <dt>強み</dt>
-                <dd style={{ whiteSpace: 'pre-wrap' }}>{campaign.product.strengths}</dd>
-                <dt>導入事例</dt>
-                <dd style={{ whiteSpace: 'pre-wrap' }}>{campaign.product.caseStudies || <span className="muted">なし（事例を使わない文面になります）</span>}</dd>
-                <dt>URL</dt>
-                <dd className="mono">{campaign.product.url}</dd>
-              </dl>
-            </div>
-          </div>
+          <ProductCard campaign={campaign} />
           <div className="card">
             <div className="card-head">
               <h2>条件</h2>
